@@ -219,8 +219,9 @@
       <div class="card-title"><span class="ico">🚩</span> จุดที่ต้องไป</div>
       <div class="field">
         <label class="label" for="bulkInput">📝 วางรายชื่อสถานที่ (บรรทัดละ 1 ที่) — ไม่ต้องเรียงลำดับ</label>
-        <textarea id="bulkInput" rows="4" placeholder="เช่น&#10;วัดป่าแดด&#10;วัดโลกโมฬี&#10;ศาลหลักเมือง&#10;มอนกาแฟ"></textarea>
-        <div class="hint">ระบบจะหาตำแหน่งให้เอง โดยเลือกที่ที่ใกล้จุดเริ่มต้นก่อน (ชื่อซ้ำกันหลายจังหวัดก็ไม่ผิดที่) แล้วค่อยกด "คำนวณเส้นทาง" เพื่อดูว่าควรไปที่ไหนก่อน</div>
+        <textarea id="bulkInput" rows="4" placeholder="เช่น&#10;วัดป่าแดด&#10;วัดช่อแล 18.8312, 98.9455&#10;วัดแม่อ่อน QX5V+2M&#10;ศาลหลักเมือง"></textarea>
+        <div class="hint">ใส่แค่ชื่อก็ได้ ระบบหาที่ที่ใกล้จุดเริ่มต้นให้ ถ้าที่ไหนหาไม่เจอ ใส่พิกัดหรือ Plus Code ต่อท้ายชื่อได้<br>
+        <b>วิธีเอาพิกัดจาก Google Maps:</b> กดค้างที่หมุดสถานที่ → ตัวเลขพิกัดขึ้นในช่องค้นหาด้านบน แตะค้างเพื่อคัดลอก หรือคัดลอก Plus Code (รหัสแบบ QX5V+2M) จากหน้าข้อมูลสถานที่</div>
         <button class="add-btn" id="bulkBtn" style="margin:10px 0 0;">ค้นหาและเพิ่มทั้งหมด</button>
         <div id="bulkStatus" class="bulk-status"></div>
       </div>
@@ -636,11 +637,102 @@ function checkCanCalc(){
 
 document.getElementById('calcBtn').addEventListener('click', () => { saveToStorage(); runOptimization(); });
 
+// ---------- Coordinates & Plus Codes (Open Location Code) ----------
+const OLC_ALPHA = '23456789CFGHJMPQRVWX';
+const OLC_PAIR_RES = [20, 1, 0.05, 0.0025, 0.000125];
+function olcDecode(code){
+  code = code.toUpperCase().replace('+','').replace(/0+$/,'');
+  let lat = -90, lng = -180, latRes = 20, lngRes = 20;
+  for(let i=0; i<Math.min(code.length,10); i+=2){
+    const p = i/2;
+    lat += OLC_ALPHA.indexOf(code[i]) * OLC_PAIR_RES[p];
+    if(code[i+1]) lng += OLC_ALPHA.indexOf(code[i+1]) * OLC_PAIR_RES[p];
+    latRes = lngRes = OLC_PAIR_RES[p];
+  }
+  for(let i=10; i<code.length; i++){
+    const d = OLC_ALPHA.indexOf(code[i]);
+    latRes /= 5; lngRes /= 4;
+    lat += Math.floor(d/4) * latRes; lng += (d%4) * lngRes;
+  }
+  return {lat: lat + latRes/2, lng: lng + lngRes/2};
+}
+function olcEncodePrefix(lat, lng, len){
+  let a = Math.min(Math.max(lat, -90), 89.9999999) + 90, b = ((lng + 180) % 360 + 360) % 360, out = '';
+  for(let p=0; out.length < len; p++){
+    const r = OLC_PAIR_RES[p];
+    const da = Math.floor(a / r + 1e-9), db = Math.floor(b / r + 1e-9);
+    a -= da*r; b -= db*r;
+    out += OLC_ALPHA[da] + OLC_ALPHA[db];
+  }
+  return out.slice(0, len);
+}
+// Short codes like "QX5V+2M" need a nearby reference point (we use the start point).
+function olcRecover(code, refLat, refLng){
+  code = code.toUpperCase();
+  const sep = code.indexOf('+');
+  if(sep >= 8) return olcDecode(code);
+  const pad = 8 - sep;
+  const res = Math.pow(20, 2 - pad/2), half = res/2;
+  const c = olcDecode(olcEncodePrefix(refLat, refLng, pad) + code);
+  if(refLat + half < c.lat && c.lat - res >= -90) c.lat -= res;
+  else if(refLat - half > c.lat && c.lat + res <= 90) c.lat += res;
+  if(refLng + half < c.lng) c.lng -= res;
+  else if(refLng - half > c.lng) c.lng += res;
+  return c;
+}
+const PLUS_RE = /([23456789CFGHJMPQRVWX]{2,8}\+[23456789CFGHJMPQRVWX]{0,3})/i;
+const COORD_RE = /(-?\d{1,2}\.\d{3,})\s*[,，\s]\s*(-?\d{1,3}\.\d{3,})/;
+// Split one pasted line into a display name plus coordinates / plus code if present.
+function parsePlaceLine(line){
+  const fromUrl = extractLatLngFromUrl(line);
+  if(fromUrl && /https?:\/\//.test(line)) return {name: line.replace(/https?:\/\/\S+/,'').trim(), lat: fromUrl.lat, lng: fromUrl.lng};
+  let m = line.match(COORD_RE);
+  if(m){
+    const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+    if(Math.abs(lat) <= 90 && Math.abs(lng) <= 180)
+      return {name: line.replace(m[0],'').replace(/^[\s,:-]+|[\s,:-]+$/g,''), lat, lng};
+  }
+  m = line.match(PLUS_RE);
+  if(m && m[1].indexOf('+') >= 2){
+    const before = line.slice(0, m.index).replace(/[\s,:-]+$/,'').trim();
+    const after = line.slice(m.index + m[0].length).replace(/^[\s,]+/,'').trim();
+    return {name: before, plus: m[1].toUpperCase(), locality: after};
+  }
+  return {name: line.trim()};
+}
+
 function parsePlaceList(text){
-  const seen = new Set();
-  return text.split(/\n|,|、/)
-    .map(l => l.replace(/^\s*([-•*·]|\d+[.)])\s*/, '').trim())
-    .filter(l => l && !seen.has(l) && seen.add(l));
+  const seen = new Set(), out = [];
+  for(let line of text.split(/\n|、/)){
+    line = line.replace(/^\s*([-•*·]|\d+[.)])\s+/, '').trim();
+    if(!line) continue;
+    const p = parsePlaceLine(line);
+    // Lines with plain names may hold several places separated by commas.
+    const parts = (p.lat == null && !p.plus) ? line.split(',').map(t => t.trim()).filter(Boolean) : [line];
+    for(const part of parts) if(!seen.has(part)){ seen.add(part); out.push(part); }
+  }
+  return out;
+}
+function startRef(){
+  const st = document.getElementById('startInput');
+  return st && st.dataset.lat ? {lat: +st.dataset.lat, lng: +st.dataset.lng} : null;
+}
+// Turn a pasted line into {name, lat, lng, how} or null.
+async function resolvePlaceLine(line){
+  const p = parsePlaceLine(line);
+  if(p.lat != null){
+    return {name: p.name || await reverseGeocodeOSM(p.lat, p.lng), lat: p.lat, lng: p.lng, how: 'พิกัด'};
+  }
+  if(p.plus){
+    let ref = startRef();
+    if(!ref && p.locality){ try{ const r = await searchPlaces(p.locality, 1); if(r[0]) ref = {lat:+r[0].lat, lng:+r[0].lon}; }catch(e){} }
+    if(!ref && p.plus.indexOf('+') < 8) return null;
+    const c = olcRecover(p.plus, ref ? ref.lat : 0, ref ? ref.lng : 0);
+    return {name: p.name || p.plus, lat: c.lat, lng: c.lng, how: 'Plus Code'};
+  }
+  const r = await searchPlaces(p.name, 1);
+  if(!r[0]) return null;
+  return {name: shortPlaceName(r[0]), lat: +r[0].lat, lng: +r[0].lon, full: r[0].display_name, how: 'ค้นชื่อ'};
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -666,20 +758,18 @@ document.getElementById('bulkBtn').addEventListener('click', async () => {
     for(let i=0;i<names.length;i++){
       const name = names[i];
       btn.textContent = `กำลังค้นหา ${i+1}/${names.length}...`;
-      const coords = extractLatLngFromUrl(name);
       let found = null;
-      if(coords) found = {lat:coords.lat, lon:coords.lng, display_name:name, name:await reverseGeocodeOSM(coords.lat, coords.lng)};
-      else { try{ const r = await searchPlaces(name, 1); found = r[0] || null; }catch(e){} }
+      try{ found = await resolvePlaceLine(name); }catch(e){}
       addStopRow();
       const input = document.getElementById('stopname-' + stopCount);
       if(found){
-        input.value = coords ? found.name : shortPlaceName(found);
-        input.title = found.display_name;
-        input.dataset.lat = found.lat; input.dataset.lng = found.lon;
-        const area = (found.display_name || '').split(',').slice(1,3).join(',').trim();
-        lines.push(`<span class="ok">✓ ${name}</span>${area ? ` <span style="color:var(--ink-soft)">— ${area}</span>` : ''}`);
+        input.value = found.name;
+        input.title = found.full || found.how;
+        input.dataset.lat = found.lat; input.dataset.lng = found.lng;
+        const area = found.full ? found.full.split(',').slice(1,3).join(',').trim() : `จาก${found.how}`;
+        lines.push(`<span class="ok">✓ ${found.name}</span>${area ? ` <span style="color:var(--ink-soft)">— ${area}</span>` : ''}`);
       } else {
-        input.value = name;
+        input.value = parsePlaceLine(name).name || name;
         document.getElementById('stop-' + stopCount).classList.add('notfound');
         lines.push(`<span class="bad">✗ ${name} — หาไม่เจอในแผนที่ฟรี</span> <button class="pin-inline" onclick="openPinPicker(${stopCount})">📍 ปักหมุดเอง</button>`);
       }
@@ -755,6 +845,11 @@ document.getElementById('pinOkBtn').addEventListener('click', () => {
 async function geocodeIfNeeded(input){
   if(input.dataset.lat && input.dataset.lng){
     return {lat:parseFloat(input.dataset.lat), lng:parseFloat(input.dataset.lng), label:input.value};
+  }
+  const pl = parsePlaceLine(input.value);
+  if(pl.lat != null || pl.plus){
+    const r = await resolvePlaceLine(input.value);
+    if(r) return {lat: r.lat, lng: r.lng, label: r.name};
   }
   const data = await searchPlaces(input.value, 1);
   if(!data.length) throw new Error('หาตำแหน่งไม่พบ: "' + input.value + '" ลองพิมพ์ให้ชัดเจนขึ้นหรือเลือกจากรายการที่ระบบเสนอ');
