@@ -113,6 +113,23 @@
   .suggestbox b{color:var(--trail-dark);}
   .calc-bar{position:sticky;bottom:0;z-index:30;padding:12px 0 calc(12px + env(safe-area-inset-bottom));
     background:linear-gradient(to bottom, rgba(243,239,228,0), var(--paper) 35%);}
+  @media (max-width:560px){
+    .summary div{flex:1 1 50%;border-bottom:1px solid var(--line);}
+    .summary div:nth-child(2n){border-right:none;}
+    .summary div:nth-last-child(-n+2){border-bottom:none;}
+  }
+  .choice-group{display:flex;flex-direction:column;gap:8px;}
+  .choice{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;
+    border:1.5px solid var(--line);border-radius:12px;background:var(--white);color:var(--ink);
+    font-family:'IBM Plex Sans Thai',sans-serif;cursor:pointer;transition:border-color .15s,background .15s;}
+  .choice-ico{font-size:22px;line-height:1;flex-shrink:0;}
+  .choice-txt{display:flex;flex-direction:column;gap:1px;}
+  .choice-txt b{font-family:'Kanit',sans-serif;font-weight:600;font-size:16px;color:var(--trail-dark);}
+  .choice-txt small{font-size:13px;color:var(--ink-soft);line-height:1.4;}
+  .choice::after{content:'';margin-left:auto;width:20px;height:20px;border-radius:50%;border:2px solid var(--line);flex-shrink:0;}
+  .choice.on{border-color:var(--trail-dark);background:#E8F0EC;}
+  .choice.on::after{border-color:var(--trail-dark);background:radial-gradient(var(--trail-dark) 0 45%, transparent 50%);}
+  .choice:focus-visible{outline:2px solid var(--trail);outline-offset:2px;}
   .mode-line{margin-top:14px;padding:12px 14px;background:var(--paper-2);border-radius:10px;font-size:13px;line-height:1.8;}
   .routebtns{display:flex;flex-direction:column;gap:8px;margin:14px 0 18px;}
   .routebtn{display:block;text-align:center;padding:14px;border-radius:12px;background:var(--trail-dark);color:var(--white);
@@ -186,7 +203,18 @@
       </div>
       <div class="field">
         <label class="label" for="orderMode">🔀 ลำดับการไป</label>
-        <select id="orderMode">
+        <div class="choice-group" id="orderChoices" role="radiogroup" aria-label="ลำดับการไป">
+          <button type="button" class="choice" data-value="fastest" role="radio">
+            <span class="choice-ico">⚡</span><span class="choice-txt"><b>เร็วที่สุด</b><small>ระบบจัดลำดับให้ใช้เวลาน้อยที่สุด</small></span>
+          </button>
+          <button type="button" class="choice" data-value="far" role="radio">
+            <span class="choice-ico">🏔️</span><span class="choice-txt"><b>ไกลสุดก่อน</b><small>แล้วไล่กลับมาใกล้จุดเริ่มต้น</small></span>
+          </button>
+          <button type="button" class="choice" data-value="near" role="radio">
+            <span class="choice-ico">🏠</span><span class="choice-txt"><b>ใกล้สุดก่อน</b><small>แล้วค่อยไกลออกไป</small></span>
+          </button>
+        </div>
+        <select id="orderMode" hidden>
           <option value="fastest">⚡ เร็วที่สุด — ระบบจัดลำดับให้ใช้เวลาน้อยที่สุด</option>
           <option value="far">🏔️ ไกลสุดก่อน — แล้วไล่กลับมาใกล้จุดเริ่มต้น</option>
           <option value="near">🏠 ใกล้สุดก่อน — แล้วค่อยไกลออกไป</option>
@@ -340,7 +368,25 @@ function initMap(){
   }
 }
 
+function syncOrderChoices(){
+  const v = document.getElementById('orderMode').value;
+  document.querySelectorAll('#orderChoices .choice').forEach(b => {
+    const on = b.dataset.value === v;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+}
+document.getElementById('orderChoices').addEventListener('click', e => {
+  const b = e.target.closest('.choice');
+  if(!b) return;
+  const sel = document.getElementById('orderMode');
+  sel.value = b.dataset.value;
+  syncOrderChoices();
+  sel.dispatchEvent(new Event('change', {bubbles:true}));
+});
+
 function syncTripTypeFields(){
+  syncOrderChoices();
   const isMulti = document.getElementById('tripType').value === 'multi';
   document.getElementById('singleDayFields').style.display = isMulti ? 'none' : 'flex';
   document.getElementById('multiDayFields').style.display = isMulti ? 'flex' : 'none';
@@ -1478,7 +1524,7 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
   if(budgetInfo.orderMode && budgetInfo.orderMode !== 'fastest'){
     const extra = Math.round((budgetInfo.extraDriveSec || 0) / 60);
     modeLine = `<div class="mode-line">ลำดับแบบ <b>${modeName}</b> · ` + (extra >= 1
-      ? `ขับรถนานกว่าแบบเร็วที่สุด <b>${extra} นาที</b> <button class="pin-inline" style="border-color:var(--trail);color:var(--trail-dark);" onclick="document.getElementById('orderMode').value='fastest';saveToStorage();document.getElementById('calcBtn').click();">ลองแบบเร็วที่สุด</button>`
+      ? `ขับรถนานกว่าแบบเร็วที่สุด <b>${extra} นาที</b> <button class="pin-inline" style="border-color:var(--trail);color:var(--trail-dark);" onclick="document.getElementById('orderMode').value='fastest';syncOrderChoices();saveToStorage();document.getElementById('calcBtn').click();">ลองแบบเร็วที่สุด</button>`
       : `เป็นลำดับที่เร็วที่สุดอยู่แล้ว 👍`) + `</div>`;
   }
   let budgetLine = `ระยะทางรวมประมาณ ${km} กม. · ค่าใช้จ่ายรวมประมาณ ${totalCost.toLocaleString()} บาท (น้ำมัน ${fuelCost.toLocaleString()} + ค่าเข้า/ใช้จ่าย ${stopsCostSum.toLocaleString()})`;
