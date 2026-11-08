@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>เส้นทางประหยัดเวลา (ฟรี ไม่ต้องมี API key)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root{
+    --paper:#F3EFE4; --paper-2:#E4DDC9; --ink:#22301F; --ink-soft:#5B6154;
+    --trail:#2F6F62; --trail-dark:#20504A; --route:#C1732E; --line:#C9C0AC; --cut:#A23E2E; --white:#FBF9F3;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans Thai',sans-serif;}
+  h1,h2,h3{font-family:'Kanit',sans-serif;margin:0;}
+  .wrap{max-width:760px;margin:0 auto;padding:20px 16px 60px;}
+  header{padding:6px 0 18px;border-bottom:1px solid var(--line);margin-bottom:22px;}
+  header h1{font-size:27px;font-weight:700;color:var(--trail-dark);line-height:1.3;}
+  header p{margin:8px 0 0;font-size:14px;color:var(--ink-soft);line-height:1.65;}
+  .badge{display:inline-block;background:var(--trail);color:var(--white);font-size:11px;font-weight:600;
+    padding:4px 10px;border-radius:20px;margin-top:8px;}
+
+  .card{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:20px 20px 6px;margin-bottom:16px;
+    box-shadow:0 1px 3px rgba(34,48,31,.05);}
+  .card-title{display:flex;align-items:center;gap:9px;font-family:'Kanit',sans-serif;font-size:17px;
+    font-weight:700;color:var(--trail-dark);margin-bottom:16px;}
+  .card-title .ico{font-size:18px;}
+  .card-note{background:var(--paper-2);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--ink-soft);
+    line-height:1.6;margin-bottom:16px;}
+
+  details.card{padding:0;overflow:hidden;box-shadow:0 1px 3px rgba(34,48,31,.05);}
+  details.card summary{list-style:none;cursor:pointer;padding:18px 20px;display:flex;align-items:center;gap:9px;
+    font-family:'Kanit',sans-serif;font-size:17px;font-weight:700;color:var(--trail-dark);}
+  details.card summary::-webkit-details-marker{display:none;}
+  details.card summary::after{content:'▾';margin-left:auto;color:var(--trail);font-size:13px;transition:transform .15s;}
+  details.card[open] summary::after{transform:rotate(180deg);}
+  details.card .card-body{padding:4px 20px 20px;}
+
+  .label{font-size:13px;font-weight:600;color:var(--trail-dark);display:block;margin-bottom:6px;}
+  .hint{font-size:12px;color:var(--ink-soft);margin-top:4px;line-height:1.5;}
+  input[type=text],input[type=number],input[type=datetime-local],input[type=time],select{
+    width:100%;padding:14px 14px;border:1px solid var(--line);border-radius:10px;
+    background:var(--white);color:var(--ink);font-size:16px;font-family:inherit;
+  }
+  input:focus,select:focus{outline:2px solid var(--trail);outline-offset:1px;}
+  .field{margin-bottom:16px;position:relative;}
+  .checkline{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--ink);padding:6px 0;}
+  .checkline input{width:19px;height:19px;accent-color:var(--trail-dark);}
+
+  .stop{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;background:var(--paper);position:relative;}
+  .stop .stoprow{display:flex;gap:8px;position:relative;}
+  .stop .stoprow input{flex:1;background:var(--white);}
+  .stop .subrow{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
+  .stop .subrow > div{flex:1;min-width:90px;}
+  .stop .subrow label{font-size:11px;color:var(--ink-soft);display:block;margin-bottom:4px;}
+  .stop .subrow input,.stop .subrow select{background:var(--white);}
+  .remove-btn{background:none;border:none;color:var(--cut);font-size:22px;cursor:pointer;padding:0 6px;line-height:1;flex-shrink:0;}
+  .add-btn{width:100%;padding:14px;border:1.5px solid var(--trail);border-radius:10px;background:none;color:var(--trail-dark);
+    font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:16px;transition:background .15s;}
+  .add-btn:hover{background:var(--paper-2);}
+  .link-btn{width:100%;padding:12px;border:none;background:none;color:var(--trail-dark);text-decoration:underline;
+    font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px;}
+
+  .two-col{display:flex;gap:12px;}
+  .two-col > div{flex:1;}
+  .calc-btn{width:100%;padding:17px;background:var(--trail-dark);color:var(--white);border:none;border-radius:12px;
+    font-size:17px;font-weight:600;font-family:'Kanit',sans-serif;letter-spacing:.3px;cursor:pointer;margin-top:4px;
+    box-shadow:0 2px 6px rgba(32,80,74,.25);}
+  .calc-btn:disabled{background:#9AA093;cursor:not-allowed;box-shadow:none;}
+  .calc-btn:hover:not(:disabled){background:var(--trail);}
+  .smallbtn{width:auto;padding:0 18px;font-size:13px;margin:0;border-radius:10px;
+    background:none;color:var(--trail-dark);border:1.5px solid var(--trail-dark);box-shadow:none;font-weight:600;}
+  .smallbtn:hover:not(:disabled){background:var(--paper-2);color:var(--trail-dark);}
+  #map{width:100%;height:320px;border:1px solid var(--line);border-radius:14px;margin-top:4px;overflow:hidden;}
+  .trail-marker{background:var(--trail-dark);color:var(--white);border-radius:50%;width:26px;height:26px;
+    display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:12px;
+    font-weight:600;border:2px solid var(--white);}
+
+  .summary{display:flex;gap:0;border:1px solid var(--line);border-radius:14px;margin-top:16px;flex-wrap:wrap;overflow:hidden;box-shadow:0 1px 3px rgba(34,48,31,.05);}
+  .summary div{flex:1;min-width:80px;padding:12px;text-align:center;border-right:1px solid var(--line);background:var(--white);}
+  .summary div:last-child{border-right:none;}
+  .summary .num{font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:500;color:var(--trail-dark);}
+  .summary .cap{font-size:11px;color:var(--ink-soft);margin-top:2px;}
+  .dayhead{font-family:'Kanit',sans-serif;font-size:16px;font-weight:700;color:var(--trail-dark);
+    margin:22px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line);}
+  .trail-list{position:relative;padding-left:34px;}
+  .trail-list::before{content:'';position:absolute;left:13px;top:8px;bottom:8px;width:2px;background:var(--line);}
+  .stopitem{position:relative;padding-bottom:22px;}
+  .stopitem:last-child{padding-bottom:0;}
+  .stopitem .marker{position:absolute;left:-34px;top:0;width:28px;height:28px;border-radius:50%;
+    background:var(--trail-dark);color:var(--white);display:flex;align-items:center;justify-content:center;
+    font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:500;}
+  .stopitem.cutoff .marker{background:#B8AF97;color:var(--ink-soft);}
+  .stopitem .name{font-weight:600;font-size:15px;}
+  .stopitem.cutoff .name{color:var(--ink-soft);text-decoration:line-through;text-decoration-color:var(--cut);}
+  .stopitem .meta{font-size:12px;color:var(--ink-soft);margin-top:3px;font-family:'IBM Plex Mono',monospace;}
+  .stopitem .warn{font-size:12px;color:var(--cut);margin-top:4px;font-weight:600;}
+  .cutline{border-top:1px dashed var(--cut);margin:6px 0 18px -34px;padding-top:8px;color:var(--cut);
+    font-size:12px;font-weight:600;}
+  .navlink{display:inline-block;margin-top:6px;font-size:12px;color:var(--trail-dark);font-weight:600;
+    text-decoration:none;border-bottom:1px solid var(--trail);}
+  .navlink:hover{color:var(--route);border-color:var(--route);}
+  .suggestbox{margin:8px 0 8px -34px;padding:10px 14px;background:var(--paper-2);border-left:3px solid var(--trail);
+    border-radius:0 10px 10px 0;font-size:12px;color:var(--ink);}
+  .suggestbox b{color:var(--trail-dark);}
+  .routebtns{display:flex;flex-direction:column;gap:8px;margin:14px 0 18px;}
+  .routebtn{display:block;text-align:center;padding:14px;border-radius:12px;background:var(--trail-dark);color:var(--white);
+    font-family:'Kanit',sans-serif;font-weight:600;font-size:15px;text-decoration:none;}
+  .routebtn:hover{background:var(--trail);}
+  .stopitem .waitnote{font-size:12px;color:var(--route);margin-top:4px;font-weight:600;}
+  .tripsummary{margin-top:10px;font-size:12px;color:var(--ink-soft);text-align:center;}
+  .error-box{background:#F6E4DE;border:1px solid var(--cut);color:var(--cut);border-radius:10px;padding:14px;font-size:13px;margin-top:12px;}
+  .saved-note{font-size:11px;color:var(--trail);text-align:center;margin-top:8px;min-height:14px;transition:opacity .3s;}
+
+  .suggest-dropdown{position:absolute;left:0;right:0;top:100%;background:var(--white);border:1px solid var(--line);
+    border-top:none;border-radius:0 0 10px 10px;max-height:220px;overflow-y:auto;z-index:50;display:none;box-shadow:0 4px 10px rgba(34,48,31,.08);}
+  .suggest-item{padding:9px 10px;font-size:13px;border-bottom:1px solid var(--paper-2);cursor:pointer;}
+  .suggest-item:hover{background:var(--paper-2);}
+  .suggest-item:last-child{border-bottom:none;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>เส้นทางประหยัดเวลา</h1>
+    <p>คำนวณเวลาเดินทางจริงและจัดลำดับให้ไปได้มากที่สุดในเวลา/งบที่มี — ใช้แผนที่และเส้นทางจาก OpenStreetMap/OSRM ทั้งหมด</p>
+    <span class="badge">ฟรี 100% · ไม่ต้องมี API key · ไม่ต้องมีบัตรเครดิต</span>
+  </header>
+
+  <details class="card">
+    <summary><span class="ico">🔗</span> นำเข้าจุดจากลิงก์ Google Maps</summary>
+    <div class="card-body">
+      <div class="two-col field">
+        <input type="text" id="shareLinkInput" placeholder="วางลิงก์สั้น เช่น share.google/...">
+        <button class="calc-btn smallbtn" id="openLinkBtn" style="flex:0 0 auto;">เปิดลิงก์</button>
+      </div>
+      <div class="hint" style="margin-bottom:10px;">ลิงก์แบบย่อดึงพิกัดตรงๆ ไม่ได้ — กด "เปิดลิงก์" แล้วคัดลอก URL เต็มจาก address bar (มี @lat,lng อยู่ในนั้น) มาแปะช่องล่าง<br><b>บนมือถือ:</b> ถ้าลิงก์เด้งเข้าแอป Google Maps แทนเบราว์เซอร์ (ไม่มี address bar ให้คัดลอก) ให้เปิดแอป Chrome แยกต่างหาก วางลิงก์ในช่อง address bar เอง แทนการแตะลิงก์ตรงๆ — หรือจะข้ามขั้นตอนนี้ไปเลย พิมพ์ชื่อสถานที่ในช่อง "จุดที่ต้องไป" ด้านล่างแทนก็ได้ ระบบค้นหาให้อัตโนมัติอยู่แล้ว</div>
+      <div class="two-col field" style="margin-bottom:0;">
+        <input type="text" id="fullUrlInput" placeholder="วาง URL เต็มที่ได้จากขั้นตอนบน">
+        <button class="calc-btn smallbtn" id="extractBtn" style="flex:0 0 auto;">ดึงพิกัด → เพิ่มจุด</button>
+      </div>
+    </div>
+  </details>
+
+  <div id="formSection">
+
+    <div class="card">
+      <div class="card-title"><span class="ico">📍</span> จุดเริ่มต้น &amp; รูปแบบทริป</div>
+      <div class="field">
+        <label class="label" for="startInput">จุดเริ่มต้น</label>
+        <input type="text" id="startInput" placeholder="พิมพ์ชื่อสถานที่ อย่างน้อย 3 ตัวอักษร" autocomplete="off">
+      </div>
+      <div class="field">
+        <label class="label" for="tripType">รูปแบบทริป</label>
+        <select id="tripType">
+          <option value="single">วันเดียว (จำกัดเวลา/งบ)</option>
+          <option value="multi">หลายวัน (ทริปต่างจังหวัด)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="label" for="startDateTime">🕘 วันและเวลาที่ออกเดินทาง</label>
+        <input type="datetime-local" id="startDateTime">
+      </div>
+      <div id="singleDayFields" class="two-col field">
+        <div>
+          <label class="label" for="endTime">🏁 ต้องเสร็จภายในกี่โมง</label>
+          <input type="time" id="endTime" value="18:00">
+        </div>
+        <div>
+          <label class="label" for="returnStart">กลับจุดเริ่มต้นไหม</label>
+          <select id="returnStart">
+            <option value="no">ไม่ต้องกลับ</option>
+            <option value="yes">ต้องกลับ</option>
+          </select>
+        </div>
+      </div>
+      <div id="multiDayFields" class="two-col field" style="display:none;">
+        <div>
+          <label class="label" for="dayMinutes">เวลาเดินทาง+เที่ยวต่อวัน (นาที)</label>
+          <input type="number" id="dayMinutes" value="600" min="60">
+        </div>
+        <div>
+          <label class="label" for="returnStartMulti">วันสุดท้ายกลับจุดเริ่มต้นไหม</label>
+          <select id="returnStartMulti">
+            <option value="no">ไม่ต้องกลับ</option>
+            <option value="yes">ต้องกลับ</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="ico">🚩</span> จุดที่ต้องไป</div>
+      <div id="stopsList"></div>
+      <button class="add-btn" id="addStopBtn">+ เพิ่มจุด</button>
+    </div>
+
+    <details class="card">
+      <summary><span class="ico">⚙️</span> ตั้งค่าเพิ่มเติม (งบ, อากาศ, น้ำมัน)</summary>
+      <div class="card-body">
+        <div class="two-col field">
+          <div>
+            <label class="label" for="budgetLimit">งบประมาณรวม (บาท)</label>
+            <input type="number" id="budgetLimit" placeholder="เว้นว่าง = ไม่จำกัด" min="0">
+          </div>
+          <div>
+            <label class="label" for="checkWeather">เช็คสภาพอากาศ</label>
+            <select id="checkWeather">
+              <option value="yes">เช็ค (พยากรณ์ล่วงหน้าได้ ~15 วัน)</option>
+              <option value="no">ไม่ต้องเช็ค</option>
+            </select>
+          </div>
+        </div>
+        <div class="two-col field">
+          <div>
+            <label class="label" for="kmPerLiter">รถวิ่งได้ (กม./ลิตร)</label>
+            <input type="number" id="kmPerLiter" value="12" min="1">
+          </div>
+          <div>
+            <label class="label" for="pricePerLiter">ราคาน้ำมัน (บาท/ลิตร)</label>
+            <input type="number" id="pricePerLiter" value="36" min="0" step="0.5">
+          </div>
+        </div>
+        <div class="field" id="hotelToggleWrap" style="display:none;">
+          <label class="checkline"><input type="checkbox" id="findHotels" checked> หาที่พักท้ายวันให้อัตโนมัติ</label>
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label class="checkline"><input type="checkbox" id="insertRestStops" checked> แนะนำจุดพักรถถ้าขับติดต่อกันเกิน 2.5 ชม.</label>
+        </div>
+      </div>
+    </details>
+
+    <button class="link-btn" id="shareBtn">🔗 คัดลอกลิงก์แชร์ทริปนี้</button>
+  </div>
+
+  <button class="calc-btn" id="calcBtn" disabled>คำนวณเส้นทาง</button>
+  <div class="saved-note" id="savedNote"></div>
+
+  <div id="errorBox"></div>
+
+  <div id="results" style="display:none;">
+    <div id="map"></div>
+    <div class="summary" id="summaryBox"></div>
+    <div id="tripBody"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+let map = null, markerLayer = null;
+let stopCount = 0;
+const DAY_COLORS = ['#C1732E','#2F6F62','#7A5DC7','#B03A5B','#3D7EA6'];
+const REST_THRESHOLD_SEC = 150 * 60;
+const STORAGE_KEY = 'route_optimizer_trip_v1';
+
+let importedTrip = null;
+(function(){
+  const h = location.hash;
+  if(h && h.indexOf('#trip=') === 0){
+    try{
+      const json = decodeURIComponent(escape(atob(decodeURIComponent(h.slice(6)))));
+      importedTrip = JSON.parse(json);
+    }catch(e){ importedTrip = null; }
+  }
+})();
+
+function initMap(){
+  try{
+    if(typeof L === 'undefined') throw new Error('Leaflet library not loaded');
+    map = L.map('map').setView([18.7061, 98.9817], 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19
+    }).addTo(map);
+    markerLayer = L.layerGroup().addTo(map);
+  }catch(e){
+    console.error('Map init failed:', e);
+    const mapEl = document.getElementById('map');
+    if(mapEl) mapEl.innerHTML = '<div style="padding:16px;color:var(--ink-soft);font-size:13px;">โหลดแผนที่ไม่สำเร็จ — ผลลัพธ์ตัวเลข/ลำดับเส้นทางยังคำนวณได้ปกติ แค่ไม่มีแผนที่ให้ดู</div>';
+  }
+}
+
+function syncTripTypeFields(){
+  const isMulti = document.getElementById('tripType').value === 'multi';
+  document.getElementById('singleDayFields').style.display = isMulti ? 'none' : 'flex';
+  document.getElementById('multiDayFields').style.display = isMulti ? 'flex' : 'none';
+  document.getElementById('hotelToggleWrap').style.display = isMulti ? 'block' : 'none';
+}
+
+function debounce(fn, wait){ let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); }; }
+
+function attachPlaceSearch(input){
+  const dropdown = document.createElement('div');
+  dropdown.className = 'suggest-dropdown';
+  input.parentNode.style.position = input.parentNode.style.position || 'relative';
+  input.parentNode.appendChild(dropdown);
+  const doSearch = debounce(async () => {
+    const q = input.value.trim();
+    if(q.length < 3){ dropdown.style.display = 'none'; return; }
+    try{
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if(!data.length){ dropdown.style.display = 'none'; return; }
+      dropdown.innerHTML = data.map((d,i) => `<div class="suggest-item" data-i="${i}">${d.display_name}</div>`).join('');
+      dropdown.style.display = 'block';
+      dropdown.querySelectorAll('.suggest-item').forEach(el => {
+        el.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          const d = data[el.dataset.i];
+          input.value = d.display_name;
+          input.dataset.lat = d.lat; input.dataset.lng = d.lon;
+          dropdown.style.display = 'none';
+          checkCanCalc(); saveToStorage();
+        });
+      });
+    }catch(e){ dropdown.style.display = 'none'; }
+  }, 500);
+  input.addEventListener('input', () => { delete input.dataset.lat; delete input.dataset.lng; doSearch(); });
+  input.addEventListener('blur', () => setTimeout(() => dropdown.style.display = 'none', 200));
+}
+
+function addStopRow(){
+  stopCount++;
+  const id = stopCount;
+  const div = document.createElement('div');
+  div.className = 'stop';
+  div.id = 'stop-' + id;
+  div.innerHTML = `
+    <div class="stoprow">
+      <input type="text" id="stopname-${id}" placeholder="ชื่อสถานที่ / ที่อยู่" autocomplete="off">
+      <button class="remove-btn" onclick="removeStop(${id})">✕</button>
+    </div>
+    <div class="subrow">
+      <div><label>อยู่กี่นาที</label><input type="number" id="stopdur-${id}" value="20" min="0"></div>
+      <div><label>ความสำคัญ</label>
+        <select id="stopprio-${id}">
+          <option value="3">สูง</option>
+          <option value="2" selected>ปานกลาง</option>
+          <option value="1">ต่ำ</option>
+        </select>
+      </div>
+      <div><label>ค่าใช้จ่าย (บาท)</label><input type="number" id="stopcost-${id}" value="0" min="0"></div>
+    </div>
+    <div class="subrow">
+      <div><label>เปิดกี่โมง (ไม่ใส่ก็ได้)</label><input type="time" id="stopopen-${id}"></div>
+      <div><label>ปิดกี่โมง (ไม่ใส่ก็ได้)</label><input type="time" id="stopclose-${id}"></div>
+    </div>
+  `;
+  document.getElementById('stopsList').appendChild(div);
+  attachPlaceSearch(document.getElementById('stopname-' + id));
+  checkCanCalc();
+}
+
+function removeStop(id){
+  const el = document.getElementById('stop-' + id);
+  if(el) el.remove();
+  checkCanCalc();
+  saveToStorage();
+}
+
+document.getElementById('addStopBtn').addEventListener('click', () => { addStopRow(); saveToStorage(); });
+
+document.getElementById('tripType').addEventListener('change', syncTripTypeFields);
+
+document.getElementById('openLinkBtn').addEventListener('click', () => {
+  const url = document.getElementById('shareLinkInput').value.trim();
+  if(!url) return;
+  const a = document.createElement('a');
+  a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+});
+
+document.getElementById('extractBtn').addEventListener('click', async () => {
+  const url = document.getElementById('fullUrlInput').value.trim();
+  const coords = extractLatLngFromUrl(url);
+  if(!coords){
+    document.getElementById('errorBox').innerHTML = '<div class="error-box">หาพิกัดในลิงก์นี้ไม่เจอ ตรวจสอบว่าเป็น URL เต็มจาก Google Maps (มี @lat,lng หรือ !3d!4d)</div>';
+    return;
+  }
+  addStopRow();
+  const id = stopCount;
+  const nameInput = document.getElementById('stopname-' + id);
+  nameInput.value = 'กำลังค้นหาชื่อสถานที่...';
+  nameInput.dataset.lat = coords.lat; nameInput.dataset.lng = coords.lng;
+  nameInput.value = await reverseGeocodeOSM(coords.lat, coords.lng);
+  checkCanCalc();
+  saveToStorage();
+  document.getElementById('fullUrlInput').value = '';
+});
+
+function extractLatLngFromUrl(url){
+  let m = url.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  if(m) return {lat:parseFloat(m[1]), lng:parseFloat(m[2])};
+  m = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if(m) return {lat:parseFloat(m[1]), lng:parseFloat(m[2])};
+  m = url.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if(m) return {lat:parseFloat(m[1]), lng:parseFloat(m[2])};
+  return null;
+}
+
+async function reverseGeocodeOSM(lat, lng){
+  try{
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+    const data = await res.json();
+    return data.display_name || (lat + ',' + lng);
+  }catch(e){ return lat + ',' + lng; }
+}
+
+function serializeTrip(){
+  const stops = Array.from(document.querySelectorAll('#stopsList .stop')).map(el => {
+    const id = el.id.split('-')[1];
+    const nameInput = document.getElementById('stopname-' + id);
+    return {
+      name: nameInput.value, lat: nameInput.dataset.lat || null, lng: nameInput.dataset.lng || null,
+      dur: document.getElementById('stopdur-' + id).value,
+      prio: document.getElementById('stopprio-' + id).value,
+      cost: document.getElementById('stopcost-' + id).value,
+      open: document.getElementById('stopopen-' + id).value,
+      close: document.getElementById('stopclose-' + id).value
+    };
+  });
+  const startInput = document.getElementById('startInput');
+  return {
+    start:{name:startInput.value, lat:startInput.dataset.lat||null, lng:startInput.dataset.lng||null},
+    tripType: document.getElementById('tripType').value,
+    startDateTime: document.getElementById('startDateTime').value,
+    endTime: document.getElementById('endTime').value,
+    returnStart: document.getElementById('returnStart').value,
+    dayMinutes: document.getElementById('dayMinutes').value,
+    returnStartMulti: document.getElementById('returnStartMulti').value,
+    budgetLimit: document.getElementById('budgetLimit').value,
+    checkWeather: document.getElementById('checkWeather').value,
+    kmPerLiter: document.getElementById('kmPerLiter').value,
+    pricePerLiter: document.getElementById('pricePerLiter').value,
+    insertRestStops: document.getElementById('insertRestStops').checked,
+    findHotels: document.getElementById('findHotels').checked,
+    stops
+  };
+}
+
+function applyTrip(t){
+  const startInput = document.getElementById('startInput');
+  startInput.value = t.start.name || '';
+  if(t.start.lat){ startInput.dataset.lat = t.start.lat; startInput.dataset.lng = t.start.lng; }
+  document.getElementById('tripType').value = t.tripType || 'single';
+  syncTripTypeFields();
+  if(t.startDateTime) document.getElementById('startDateTime').value = t.startDateTime;
+  document.getElementById('endTime').value = t.endTime || '18:00';
+  document.getElementById('returnStart').value = t.returnStart || 'no';
+  document.getElementById('dayMinutes').value = t.dayMinutes || 600;
+  document.getElementById('returnStartMulti').value = t.returnStartMulti || 'no';
+  document.getElementById('budgetLimit').value = t.budgetLimit || '';
+  document.getElementById('checkWeather').value = t.checkWeather || 'yes';
+  document.getElementById('kmPerLiter').value = t.kmPerLiter || 12;
+  document.getElementById('pricePerLiter').value = t.pricePerLiter || 36;
+  document.getElementById('insertRestStops').checked = !!t.insertRestStops;
+  document.getElementById('findHotels').checked = !!t.findHotels;
+  document.getElementById('stopsList').innerHTML = '';
+  (t.stops || []).forEach(s => {
+    addStopRow();
+    const id = stopCount;
+    const nameInput = document.getElementById('stopname-' + id);
+    nameInput.value = s.name || '';
+    if(s.lat){ nameInput.dataset.lat = s.lat; nameInput.dataset.lng = s.lng; }
+    document.getElementById('stopdur-' + id).value = s.dur || 20;
+    document.getElementById('stopprio-' + id).value = s.prio || 2;
+    document.getElementById('stopcost-' + id).value = s.cost || 0;
+    document.getElementById('stopopen-' + id).value = s.open || '';
+    document.getElementById('stopclose-' + id).value = s.close || '';
+  });
+  checkCanCalc();
+}
+
+function saveToStorage(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeTrip())); }catch(e){}
+}
+function loadFromStorage(){
+  try{ const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : null; }catch(e){ return null; }
+}
+const saveToStorageDebounced = debounce(saveToStorage, 600);
+function flashSavedNote(){
+  const el = document.getElementById('savedNote');
+  if(!el) return;
+  el.textContent = 'บันทึกการตั้งค่าไว้ในเครื่องนี้แล้ว';
+  el.style.opacity = '1';
+  clearTimeout(flashSavedNote._t);
+  flashSavedNote._t = setTimeout(() => { el.style.opacity = '0'; }, 2000);
+}
+
+document.getElementById('shareBtn').addEventListener('click', () => {
+  const data = serializeTrip();
+  const encoded = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(data)))));
+  const url = location.href.split('#')[0] + '#trip=' + encoded;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(() => alert('คัดลอกลิงก์แชร์แล้ว')).catch(() => prompt('คัดลอกลิงก์นี้ไปแชร์ได้เลย:', url));
+  } else {
+    prompt('คัดลอกลิงก์นี้ไปแชร์ได้เลย:', url);
+  }
+});
+
+document.getElementById('formSection').addEventListener('input', () => { saveToStorageDebounced(); });
+document.getElementById('formSection').addEventListener('change', () => { saveToStorageDebounced(); });
+
+document.addEventListener('DOMContentLoaded', function(){
+  initMap();
+
+  attachPlaceSearch(document.getElementById('startInput'));
+  document.getElementById('startInput').addEventListener('input', checkCanCalc);
+
+  if(importedTrip){
+    applyTrip(importedTrip);
+  } else {
+    const saved = loadFromStorage();
+    if(saved){
+      applyTrip(saved);
+      flashSavedNote();
+    } else {
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      document.getElementById('startDateTime').value = now.toISOString().slice(0,16);
+      addStopRow(); addStopRow();
+    }
+  }
+  syncTripTypeFields();
+  checkCanCalc();
+});
+
+function checkCanCalc(){
+  const start = document.getElementById('startInput');
+  const hasStart = start && start.value.trim().length > 0;
+  const stopEls = document.querySelectorAll('#stopsList .stop');
+  document.getElementById('calcBtn').disabled = !(hasStart && stopEls.length >= 1);
+}
+
+document.getElementById('calcBtn').addEventListener('click', () => { saveToStorage(); runOptimization(); });
+
+async function geocodeIfNeeded(input){
+  if(input.dataset.lat && input.dataset.lng){
+    return {lat:parseFloat(input.dataset.lat), lng:parseFloat(input.dataset.lng), label:input.value};
+  }
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(input.value)}`);
+  const data = await res.json();
+  if(!data.length) throw new Error('หาตำแหน่งไม่พบ: "' + input.value + '" ลองพิมพ์ให้ชัดเจนขึ้นหรือเลือกจากรายการที่ระบบเสนอ');
+  return {lat:parseFloat(data[0].lat), lng:parseFloat(data[0].lon), label:input.value};
+}
+
+function tourTime(order, mat, visitSec){
+  let t = 0;
+  for(let i=0;i<order.length-1;i++){ t += mat[order[i]][order[i+1]] + visitSec[order[i]]; }
+  t += visitSec[order[order.length-1]];
+  return t;
+}
+function tourDistance(order, distMat){
+  let d = 0;
+  for(let i=0;i<order.length-1;i++) d += distMat[order[i]][order[i+1]];
+  return d;
+}
+function heldKarpOrder(mat, visitSec, mustReturn, others){
+  const m = others.length;
+  if(m === 0) return [0];
+  const FULL = 1 << m;
+  const dp = Array.from({length:FULL}, () => new Array(m).fill(Infinity));
+  const parent = Array.from({length:FULL}, () => new Array(m).fill(-1));
+  for(let j=0;j<m;j++) dp[1<<j][j] = mat[0][others[j]] + visitSec[others[j]];
+  for(let mask=1; mask<FULL; mask++){
+    for(let j=0;j<m;j++){
+      if(!(mask & (1<<j))) continue;
+      const cur = dp[mask][j];
+      if(cur === Infinity) continue;
+      for(let k=0;k<m;k++){
+        if(mask & (1<<k)) continue;
+        const nmask = mask | (1<<k);
+        const cost = cur + mat[others[j]][others[k]] + visitSec[others[k]];
+        if(cost < dp[nmask][k]){ dp[nmask][k] = cost; parent[nmask][k] = j; }
+      }
+    }
+  }
+  const full = FULL - 1;
+  let best = Infinity, bestJ = -1;
+  for(let j=0;j<m;j++){
+    if(dp[full][j] === Infinity) continue;
+    const total = dp[full][j] + (mustReturn ? mat[others[j]][0] : 0);
+    if(total < best){ best = total; bestJ = j; }
+  }
+  const seq = [];
+  let mask = full, j = bestJ;
+  while(j !== -1){ seq.push(j); const pj = parent[mask][j]; mask ^= (1<<j); j = pj; }
+  seq.reverse();
+  return [0, ...seq.map(idx => others[idx])];
+}
+function heuristicOrder(mat, visitSec, mustReturn, others){
+  function totalOf(ord){ let t = tourTime(ord, mat, visitSec); if(mustReturn) t += mat[ord[ord.length-1]][0]; return t; }
+  let order = [0];
+  let remaining = new Set(others);
+  let cur = 0;
+  while(remaining.size){
+    let best=null,bd=Infinity;
+    for(const c of remaining){ if(mat[cur][c] < bd){ bd = mat[cur][c]; best = c; } }
+    order.push(best); remaining.delete(best); cur = best;
+  }
+  let improved = true;
+  while(improved){
+    improved = false;
+    for(let i=1;i<order.length-1;i++){
+      for(let j=i+1;j<order.length;j++){
+        const newOrder = order.slice(0,i).concat(order.slice(i,j+1).reverse(), order.slice(j+1));
+        if(totalOf(newOrder) < totalOf(order)){ order = newOrder; improved = true; }
+      }
+    }
+    for(let i=1;i<order.length;i++){
+      const node = order[i];
+      const without = order.slice(0,i).concat(order.slice(i+1));
+      for(let pos=1; pos<=without.length; pos++){
+        const candidate = without.slice(0,pos).concat([node], without.slice(pos));
+        if(totalOf(candidate) < totalOf(order)){ order = candidate; improved = true; }
+      }
+    }
+  }
+  return order;
+}
+function optimalOrder(mat, visitSec, mustReturn){
+  const n = mat.length;
+  const others = Array.from({length:n-1}, (_,i)=>i+1);
+  if(others.length === 0) return [0];
+  if(others.length <= 12) return heldKarpOrder(mat, visitSec, mustReturn, others);
+  return heuristicOrder(mat, visitSec, mustReturn, others);
+}
+function splitIntoDays(order, mat, visitSec, dayBudgetSec){
+  let days = [[order[0]]];
+  let cum = visitSec[order[0]];
+  for(let i=1;i<order.length;i++){
+    const prev = order[i-1], cur = order[i];
+    const legTime = mat[prev][cur];
+    const addTime = legTime + visitSec[cur];
+    if(cum + addTime > dayBudgetSec && days[days.length-1].length > 1){
+      days.push([prev, cur]);
+      cum = legTime + visitSec[cur];
+    } else {
+      days[days.length-1].push(cur);
+      cum += addTime;
+    }
+  }
+  return days;
+}
+
+async function getDistanceMatrixOSRM(points){
+  const coordStr = points.map(p => `${p.lng},${p.lat}`).join(';');
+  const url = `https://router.project-osrm.org/table/v1/driving/${coordStr}?annotations=duration,distance`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if(data.code !== 'Ok') throw new Error('คำนวณระยะทางไม่สำเร็จ (OSRM: ' + data.code + ') ลองใหม่อีกครั้ง อาจเป็นเพราะเซิร์ฟเวอร์สาธารณะช้าหรือติด rate limit ชั่วคราว');
+  const dur = data.durations.map(row => row.map(v => v === null ? Infinity : v));
+  const dist = data.distances.map(row => row.map(v => v === null ? 0 : v));
+  return {dur, dist};
+}
+
+async function getRouteGeometry(coordsList){
+  const coordStr = coordsList.map(p => `${p.lng},${p.lat}`).join(';');
+  const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
+  try{
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data.code !== 'Ok' || !data.routes || !data.routes[0]) return null;
+    return data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+  }catch(e){ return null; }
+}
+
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371000, toRad=d=>d*Math.PI/180;
+  const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
+  const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+
+async function findNearbyOSM(lat, lng, tagKey, tagValue, radius, fallbackName){
+  const query = `[out:json][timeout:15];node["${tagKey}"="${tagValue}"](around:${radius},${lat},${lng});out center 5;`;
+  try{
+    const res = await fetch('https://overpass-api.de/api/interpreter', {method:'POST', body: query});
+    const data = await res.json();
+    if(!data.elements || !data.elements.length) return null;
+    let best=null, bd=Infinity;
+    data.elements.forEach(el => {
+      const elat = el.lat !== undefined ? el.lat : (el.center && el.center.lat);
+      const elon = el.lon !== undefined ? el.lon : (el.center && el.center.lon);
+      if(elat === undefined) return;
+      const d = haversine(lat,lng, elat, elon);
+      if(d < bd){ bd = d; best = {name:(el.tags && el.tags.name) || fallbackName, lat:elat, lon:elon}; }
+    });
+    return best;
+  }catch(e){ return null; }
+}
+
+async function getRainChance(lat, lng, dateObj){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const target = new Date(dateObj); target.setHours(0,0,0,0);
+  const diffDays = Math.round((target - today) / 86400000);
+  if(diffDays < 0 || diffDays > 15) return null;
+  const dstr = dateObj.toISOString().slice(0,10);
+  try{
+    const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=precipitation_probability_max&timezone=auto&start_date=${dstr}&end_date=${dstr}`);
+    const data = await res.json();
+    if(data && data.daily && data.daily.precipitation_probability_max) return data.daily.precipitation_probability_max[0];
+  }catch(e){}
+  return null;
+}
+
+function fmtMin(sec){ return Math.round(sec/60); }
+function fmtKm(m){ return Math.round(m/100)/10; }
+
+// ---------- One-day planner (time windows) ----------
+// All times are seconds from midnight of the travel day.
+const PRIO_WEIGHT = {3:10000, 2:100, 1:1};
+function timeToSec(v){
+  if(!v) return null;
+  const [h,m] = v.split(':').map(Number);
+  return h*3600 + m*60;
+}
+function fmtClock(sec){
+  const s = ((Math.round(sec/60)*60) % 86400 + 86400) % 86400;
+  return `${Math.floor(s/3600)}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}`;
+}
+
+// Walk an order and return the schedule, or ok:false if a window/deadline is broken.
+function simulateDay(order, mat, P, startSec, endSec, mustReturn){
+  let t = startSec;
+  const times = {};
+  times[order[0]] = {arrive:t, start:t, depart:t, wait:0};
+  for(let i=1;i<order.length;i++){
+    const k = order[i], prev = order[i-1];
+    const arrive = t + mat[prev][k];
+    const start = Math.max(arrive, P[k].openSec);
+    const depart = start + P[k].durationSec;
+    if(depart > P[k].closeSec || depart > endSec) return {ok:false, failAt:k};
+    times[k] = {arrive, start, depart, wait:start-arrive};
+    t = depart;
+  }
+  let finish = t;
+  if(mustReturn && order.length > 1) finish = t + mat[order[order.length-1]][order[0]];
+  if(finish > endSec) return {ok:false, failAt:order[order.length-1]};
+  return {ok:true, times, finish};
+}
+
+// Exact: best subset + order. Score = priority weights (keep high-priority places first),
+// tie-break = earliest finish. Feasible up to ~15 places.
+function planOneDayExact(mat, P, cand, startSec, endSec, mustReturn){
+  const m = cand.length;
+  const FULL = 1 << m;
+  const dp = new Float64Array(FULL*m).fill(Infinity);
+  const par = new Int8Array(FULL*m).fill(-1);
+  const ok = (k, depart) => depart <= P[k].closeSec && depart <= endSec &&
+    (!mustReturn || depart + mat[k][0] <= endSec);
+  for(let j=0;j<m;j++){
+    const k = cand[j];
+    const depart = Math.max(startSec + mat[0][k], P[k].openSec) + P[k].durationSec;
+    if(ok(k, depart)) dp[(1<<j)*m + j] = depart;
+  }
+  for(let mask=1; mask<FULL; mask++){
+    for(let j=0;j<m;j++){
+      const cur = dp[mask*m + j];
+      if(cur === Infinity) continue;
+      const kj = cand[j];
+      for(let n=0;n<m;n++){
+        if(mask & (1<<n)) continue;
+        const kn = cand[n];
+        const depart = Math.max(cur + mat[kj][kn], P[kn].openSec) + P[kn].durationSec;
+        if(!ok(kn, depart)) continue;
+        const idx = (mask|(1<<n))*m + n;
+        if(depart < dp[idx]){ dp[idx] = depart; par[idx] = j; }
+      }
+    }
+  }
+  let bestScore = 0, bestFinish = startSec, bestMask = 0, bestJ = -1;
+  for(let mask=1; mask<FULL; mask++){
+    let score = 0;
+    for(let j=0;j<m;j++) if(mask & (1<<j)) score += PRIO_WEIGHT[P[cand[j]].priority] || 1;
+    if(score < bestScore) continue;
+    for(let j=0;j<m;j++){
+      const d = dp[mask*m + j];
+      if(d === Infinity) continue;
+      const finish = d + (mustReturn ? mat[cand[j]][0] : 0);
+      if(score > bestScore || finish < bestFinish){ bestScore = score; bestFinish = finish; bestMask = mask; bestJ = j; }
+    }
+  }
+  const seq = [];
+  let mask = bestMask, j = bestJ;
+  while(j !== -1 && mask){ seq.push(cand[j]); const pj = par[mask*m + j]; mask ^= (1<<j); j = pj; }
+  seq.reverse();
+  return [0, ...seq];
+}
+
+// Large lists: good order first, then drop the least important place until the day works.
+function planOneDayHeuristic(mat, P, cand, startSec, endSec, mustReturn){
+  let keep = cand.slice();
+  const visitSec = P.map(p => p.durationSec);
+  while(keep.length){
+    const sub = [0, ...keep];
+    const subMat = sub.map(a => sub.map(b => mat[a][b]));
+    const subOrder = heuristicOrder(subMat, sub.map(i => visitSec[i]), mustReturn, sub.map((_,i)=>i).slice(1));
+    const order = subOrder.map(i => sub[i]);
+    if(simulateDay(order, mat, P, startSec, endSec, mustReturn).ok){
+      // Put dropped places back wherever they still fit (most important first).
+      const dropped = cand.filter(k => !order.includes(k)).sort((a,b) => P[b].priority - P[a].priority);
+      for(const k of dropped){
+        let bestOrd = null, bestFin = Infinity;
+        for(let pos=1; pos<=order.length; pos++){
+          const tryOrd = [...order.slice(0,pos), k, ...order.slice(pos)];
+          const r = simulateDay(tryOrd, mat, P, startSec, endSec, mustReturn);
+          if(r.ok && r.finish < bestFin){ bestFin = r.finish; bestOrd = tryOrd; }
+        }
+        if(bestOrd) order.splice(0, order.length, ...bestOrd);
+      }
+      return order;
+    }
+    let worst = keep[0];
+    for(const k of keep){
+      if(P[k].priority < P[worst].priority ||
+        (P[k].priority === P[worst].priority && P[k].durationSec > P[worst].durationSec)) worst = k;
+    }
+    keep = keep.filter(k => k !== worst);
+  }
+  return [0];
+}
+
+function planOneDay(mat, P, cand, startSec, endSec, mustReturn){
+  if(cand.length === 0) return [0];
+  return cand.length <= 15
+    ? planOneDayExact(mat, P, cand, startSec, endSec, mustReturn)
+    : planOneDayHeuristic(mat, P, cand, startSec, endSec, mustReturn);
+}
+
+// Google Maps navigation links for a whole route (max 9 stops in between per link).
+function buildMapsRouteLinks(seq, P){
+  const links = [];
+  let i = 0;
+  while(i < seq.length - 1){
+    const chunk = seq.slice(i, i + 11);
+    const o = P[chunk[0]], d = P[chunk[chunk.length-1]];
+    const wps = chunk.slice(1, -1).map(k => `${P[k].lat},${P[k].lng}`).join('|');
+    links.push(`https://www.google.com/maps/dir/?api=1&origin=${o.lat},${o.lng}&destination=${d.lat},${d.lng}` +
+      (wps ? `&waypoints=${encodeURIComponent(wps)}` : '') + '&travelmode=driving');
+    i += chunk.length - 1;
+  }
+  return links;
+}
+
+async function runOptimization(){
+  document.getElementById('errorBox').innerHTML = '';
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('calcBtn').disabled = true;
+  document.getElementById('calcBtn').textContent = 'กำลังคำนวณ...';
+
+  try{
+    syncTripTypeFields();
+    const startInput = document.getElementById('startInput');
+    const stopEls = Array.from(document.querySelectorAll('#stopsList .stop'));
+    const tripType = document.getElementById('tripType').value;
+    let startDateTime = new Date(document.getElementById('startDateTime').value);
+    if(isNaN(startDateTime.getTime())){
+      startDateTime = new Date();
+      startDateTime.setSeconds(0,0);
+    }
+    const kmPerLiter = parseFloat(document.getElementById('kmPerLiter').value) || 12;
+    const pricePerLiter = parseFloat(document.getElementById('pricePerLiter').value) || 0;
+    const budgetLimit = parseFloat(document.getElementById('budgetLimit').value) || 0;
+    const checkWeather = document.getElementById('checkWeather').value === 'yes';
+    const insertRestStops = document.getElementById('insertRestStops').checked;
+    const findHotels = document.getElementById('findHotels').checked;
+
+    const startPoint = await geocodeIfNeeded(startInput);
+    const stopData = [];
+    for(const el of stopEls){
+      const id = el.id.match(/stop-(\d+)/)[1];
+      const nameInput = document.getElementById('stopname-' + id);
+      if(!nameInput.value.trim()) continue;
+      const pt = await geocodeIfNeeded(nameInput);
+      stopData.push({
+        ...pt,
+        durationSec: (parseFloat(document.getElementById('stopdur-' + id).value)||0) * 60,
+        priority: parseInt(document.getElementById('stopprio-' + id).value),
+        costBaht: parseFloat(document.getElementById('stopcost-' + id).value) || 0,
+        openSec: timeToSec(document.getElementById('stopopen-' + id).value) ?? 0,
+        closeSec: timeToSec(document.getElementById('stopclose-' + id).value) ?? 48*3600
+      });
+    }
+    if(stopData.length === 0) throw new Error('กรุณาเพิ่มอย่างน้อย 1 จุดที่ต้องไป');
+    if(stopData.length > 40) throw new Error('จุดเยอะเกินไปสำหรับเซิร์ฟเวอร์ OSRM สาธารณะ (แนะนำไม่เกิน 40 จุด)');
+
+    const allPoints = [{...startPoint, durationSec:0, priority:99, costBaht:0, openSec:0, closeSec:48*3600}, ...stopData];
+    const visitSec = allPoints.map(p => p.durationSec);
+    const {dur: mat, dist: distMat} = await getDistanceMatrixOSRM(allPoints);
+
+    let order = optimalOrder(mat, visitSec, tripType === 'single'
+      ? document.getElementById('returnStart').value === 'yes'
+      : document.getElementById('returnStartMulti').value === 'yes');
+
+    let days, cutStops = [], budgetInfo = {};
+
+    function moneyOf(ord, mustReturn){
+      let distM = tourDistance(ord, distMat);
+      if(mustReturn) distM += distMat[ord[ord.length-1]][0];
+      const fuel = (distM/1000/kmPerLiter) * pricePerLiter;
+      const stopsCost = ord.slice(1).reduce((s,idx) => s + (allPoints[idx].costBaht||0), 0);
+      return fuel + stopsCost;
+    }
+
+    if(tripType === 'single'){
+      const mustReturn = document.getElementById('returnStart').value === 'yes';
+      const startSec = startDateTime.getHours()*3600 + startDateTime.getMinutes()*60;
+      let endSec = timeToSec(document.getElementById('endTime').value) ?? 18*3600;
+      if(endSec <= startSec) endSec += 86400; // finishes after midnight
+      let cand = allPoints.map((_,i)=>i).slice(1);
+      const moneyCut = [];
+      let dayOrder = planOneDay(mat, allPoints, cand, startSec, endSec, mustReturn);
+      // Money budget: drop the least important visited place and re-plan until it fits.
+      while(budgetLimit > 0 && dayOrder.length > 1 && moneyOf(dayOrder, mustReturn) > budgetLimit){
+        let worst = dayOrder[1];
+        for(const k of dayOrder.slice(1)) if(allPoints[k].priority < allPoints[worst].priority) worst = k;
+        moneyCut.push(worst);
+        cand = cand.filter(k => k !== worst);
+        dayOrder = planOneDay(mat, allPoints, cand, startSec, endSec, mustReturn);
+      }
+      const sim = simulateDay(dayOrder, mat, allPoints, startSec, endSec, mustReturn);
+      const visited = new Set(dayOrder);
+      const cutReasons = {};
+      allPoints.forEach((p,k) => {
+        if(k === 0 || visited.has(k)) return;
+        cutStops.push(k);
+        if(moneyCut.includes(k)) cutReasons[k] = 'เกินงบที่ตั้งไว้';
+        else if(!simulateDay([0,k], mat, allPoints, startSec, endSec, mustReturn).ok) cutReasons[k] = 'ไปไม่ทันช่วงเวลาที่เปิด หรือไกลเกินช่วงเวลาที่มี';
+        else cutReasons[k] = 'เวลาไม่พอในวันนี้ (ตัดจุดที่สำคัญน้อยกว่าออกก่อน)';
+      });
+      days = [dayOrder];
+      budgetInfo = {mustReturn, startSec, endSec, moneyBudget: budgetLimit,
+        schedule: sim.ok ? sim.times : null, finishSec: sim.ok ? sim.finish : null, cutReasons};
+    } else {
+      const mustReturn = document.getElementById('returnStartMulti').value === 'yes';
+      const dayMinutes = parseFloat(document.getElementById('dayMinutes').value) || 600;
+      days = splitIntoDays(order, mat, visitSec, dayMinutes*60);
+      budgetInfo = {mustReturn, dayMinutes, moneyBudget: budgetLimit};
+    }
+
+    await renderResults(allPoints, days, cutStops, mat, distMat, visitSec, tripType, budgetInfo,
+      {kmPerLiter, pricePerLiter, insertRestStops, findHotels, startDateTime, checkWeather, moneyOfFn: moneyOf});
+  } catch(err){
+    document.getElementById('errorBox').innerHTML = `<div class="error-box">${err.message}</div>`;
+  } finally {
+    document.getElementById('calcBtn').disabled = false;
+    document.getElementById('calcBtn').textContent = 'คำนวณเส้นทาง';
+  }
+}
+
+async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, tripType, budgetInfo, opts){
+  document.getElementById('results').style.display = 'block';
+  if(markerLayer) markerLayer.clearLayers();
+
+  let totalTravelSec = 0, totalDistM = 0, totalVisitSec = 0, globalMarkerNum = 1;
+  let bodyHtml = '';
+  const bounds = [];
+
+  for(let d=0; d<days.length; d++){
+    const dayOrder = days[d];
+    const isLastDay = d === days.length - 1;
+    const returningToday = isLastDay && budgetInfo.mustReturn;
+    const routeSeq = returningToday ? [...dayOrder, days[0][0]] : dayOrder;
+    const color = DAY_COLORS[d % DAY_COLORS.length];
+
+    if(map){
+      const geom = await getRouteGeometry(routeSeq.map(i => ({lat:allPoints[i].lat, lng:allPoints[i].lng})));
+      if(geom){
+        L.polyline(geom, {color, weight:4}).addTo(markerLayer);
+        geom.forEach(pt => bounds.push(pt));
+      }
+    }
+
+    if(days.length > 1) bodyHtml += `<div class="dayhead">วันที่ ${d+1}</div>`;
+    if(routeSeq.length > 1){
+      const links = buildMapsRouteLinks(routeSeq, allPoints);
+      bodyHtml += '<div class="routebtns">' + links.map((u,i) =>
+        `<a class="routebtn" href="${u}" target="_blank" rel="noopener">🧭 เปิดนำทางทั้งเส้นทาง${links.length>1 ? ` (ช่วงที่ ${i+1})` : ''} ใน Google Maps</a>`).join('') + '</div>';
+    }
+    bodyHtml += '<div class="trail-list">';
+
+    let cum = new Date(opts.startDateTime.getTime() + d*24*60*60*1000);
+    for(let pos=0; pos<dayOrder.length; pos++){
+      const globalIdx = dayOrder[pos];
+      const p = allPoints[globalIdx];
+      const isBoundaryRepeat = pos===0 && d>0;
+
+      if(pos>0){
+        const prevIdx = dayOrder[pos-1];
+        const legSec = mat[prevIdx][globalIdx];
+        const legM = distMat[prevIdx][globalIdx];
+        totalTravelSec += legSec; totalDistM += legM;
+        cum = new Date(cum.getTime() + legSec*1000);
+
+        if(opts.insertRestStops && legSec > REST_THRESHOLD_SEC){
+          const midLat = (allPoints[prevIdx].lat + p.lat)/2;
+          const midLng = (allPoints[prevIdx].lng + p.lng)/2;
+          const gas = await findNearbyOSM(midLat, midLng, 'amenity', 'fuel', 5000, 'ปั๊มน้ำมัน');
+          if(gas) bodyHtml += `<div class="suggestbox">แนะนำแวะพัก (ขับต่อเนื่อง ${fmtMin(legSec)} นาที): <b>${gas.name}</b> กลางทาง</div>`;
+        }
+      }
+
+      let warnHtml = '';
+      if(!isBoundaryRepeat && opts.checkWeather){
+        const rainDate = (budgetInfo.schedule && budgetInfo.schedule[globalIdx])
+          ? new Date(opts.startDateTime.getTime() + (budgetInfo.schedule[globalIdx].arrive - budgetInfo.startSec)*1000) : cum;
+        const rain = await getRainChance(p.lat, p.lng, rainDate);
+        if(rain !== null && rain >= 60) warnHtml += `<div class="warn">🌧 พยากรณ์ฝนวันนั้นสูง ${rain}%</div>`;
+      }
+
+      if(!isBoundaryRepeat) totalVisitSec += visitSec[globalIdx];
+      cum = new Date(cum.getTime() + (isBoundaryRepeat ? 0 : visitSec[globalIdx]*1000));
+
+      const markerLabel = isBoundaryRepeat ? '⌂' : String(globalMarkerNum);
+      if(!isBoundaryRepeat) globalMarkerNum++;
+
+      if(map && markerLayer){
+        const icon = L.divIcon({className:'', html:`<div class="trail-marker">${markerLabel}</div>`, iconSize:[26,26], iconAnchor:[13,13]});
+        L.marker([p.lat, p.lng], {icon}).bindTooltip(p.label).addTo(markerLayer);
+        bounds.push([p.lat, p.lng]);
+      }
+
+      let navLink = '';
+      if(pos>0){
+        const prevP = allPoints[dayOrder[pos-1]];
+        const navUrl = `https://www.google.com/maps/dir/?api=1&origin=${prevP.lat},${prevP.lng}&destination=${p.lat},${p.lng}&travelmode=driving`;
+        navLink = `<a href="${navUrl}" target="_blank" rel="noopener" class="navlink">เปิดนำทางไปจุดนี้ →</a>`;
+      }
+
+      const sch = budgetInfo.schedule && budgetInfo.schedule[globalIdx];
+      let metaText;
+      if(pos===0 && d===0) metaText = sch ? `จุดเริ่มต้น · ออกเดินทาง ${fmtClock(sch.depart)}` : 'จุดเริ่มต้น';
+      else if(isBoundaryRepeat) metaText = 'พักค้างคืนบริเวณนี้ / เริ่มวันถัดไป';
+      else if(sch){
+        metaText = `เดินทาง ${fmtMin(mat[dayOrder[pos-1]][globalIdx])} นาที · ถึง ${fmtClock(sch.arrive)}`;
+        if(sch.wait >= 60) warnHtml = `<div class="waitnote">⏳ รอเปิด ${fmtMin(sch.wait)} นาที (เปิด ${fmtClock(p.openSec)})</div>` + warnHtml;
+        metaText += ` · ออก ${fmtClock(sch.depart)}`;
+      } else metaText = `เดินทาง ${fmtMin(mat[dayOrder[pos-1]][globalIdx])} นาที · ถึงประมาณ ${cum.getHours()}:${String(cum.getMinutes()).padStart(2,'0')}`;
+
+      bodyHtml += `<div class="stopitem">
+        <div class="marker">${markerLabel}</div>
+        <div class="name">${p.label}</div>
+        <div class="meta">${metaText}${(!isBoundaryRepeat && p.durationSec>0) ? ` · อยู่ ${fmtMin(p.durationSec)} นาที` : ''}${(!isBoundaryRepeat && p.costBaht>0) ? ` · ${p.costBaht} บาท` : ''}</div>
+        ${warnHtml}
+        ${navLink}
+      </div>`;
+    }
+    bodyHtml += '</div>';
+    if(returningToday && budgetInfo.finishSec != null && dayOrder.length > 1){
+      bodyHtml += `<div class="tripsummary" style="text-align:left;margin:14px 0 0;">🏠 กลับถึงจุดเริ่มต้นประมาณ ${fmtClock(budgetInfo.finishSec)}</div>`;
+    }
+
+    if(!isLastDay && opts.findHotels){
+      const lastP = allPoints[dayOrder[dayOrder.length-1]];
+      const hotel = await findNearbyOSM(lastP.lat, lastP.lng, 'tourism', 'hotel', 6000, 'ที่พัก');
+      if(hotel) bodyHtml += `<div class="suggestbox" style="margin-left:0;">ที่พักแนะนำใกล้จุดสุดท้ายของวันนี้: <b>${hotel.name}</b></div>`;
+    }
+  }
+
+  if(budgetInfo.mustReturn){
+    const lastDay = days[days.length-1];
+    const lastIdx = lastDay[lastDay.length-1];
+    totalTravelSec += mat[lastIdx][days[0][0]];
+    totalDistM += distMat[lastIdx][days[0][0]];
+  }
+
+  if(cutStops.length){
+    bodyHtml += `<div class="cutline" style="margin-left:34px;">— ไปไม่ทันในวันนี้ —</div><div class="trail-list">`;
+    cutStops.forEach(globalIdx => {
+      const p = allPoints[globalIdx];
+      const why = (budgetInfo.cutReasons && budgetInfo.cutReasons[globalIdx]) || 'เวลา/งบไม่พอ';
+      bodyHtml += `<div class="stopitem cutoff"><div class="marker">✕</div><div class="name">${p.label}</div><div class="meta">${why} · ความสำคัญ: ${p.priority===3?'สูง':p.priority===2?'ปานกลาง':'ต่ำ'}</div></div>`;
+    });
+    bodyHtml += '</div>';
+  }
+
+  const totalStops = days.reduce((s,dArr) => s + dArr.length - 1, 0);
+  const grandTotalSec = totalTravelSec + totalVisitSec;
+  const km = fmtKm(totalDistM);
+  const fuelCost = Math.round((totalDistM/1000/opts.kmPerLiter) * opts.pricePerLiter);
+  const flatIdxSet = new Set(days.flat());
+  let stopsCostSum = 0;
+  flatIdxSet.forEach(idx => { stopsCostSum += allPoints[idx].costBaht || 0; });
+  const totalCost = fuelCost + stopsCostSum;
+
+  let summaryHtml = `
+    <div><div class="num">${totalStops}</div><div class="cap">จุดที่ไปได้</div></div>
+    <div><div class="num">${fmtMin(totalTravelSec)}</div><div class="cap">นาทีเดินทาง</div></div>`;
+  if(tripType === 'single'){
+    summaryHtml += `<div><div class="num">${budgetInfo.finishSec != null ? fmtClock(budgetInfo.finishSec) : '-'}</div><div class="cap">เสร็จประมาณ (ภายใน ${fmtClock(budgetInfo.endSec)})</div></div>
+    <div><div class="num">${cutStops.length}</div><div class="cap">จุดที่ตัดออก</div></div>`;
+  } else {
+    summaryHtml += `<div><div class="num">${days.length}</div><div class="cap">จำนวนวัน</div></div>`;
+  }
+  document.getElementById('summaryBox').innerHTML = summaryHtml;
+
+  let budgetLine = `ระยะทางรวมประมาณ ${km} กม. · ค่าใช้จ่ายรวมประมาณ ${totalCost.toLocaleString()} บาท (น้ำมัน ${fuelCost.toLocaleString()} + ค่าเข้า/ใช้จ่าย ${stopsCostSum.toLocaleString()})`;
+  if(budgetInfo.moneyBudget > 0){
+    budgetLine += totalCost > budgetInfo.moneyBudget
+      ? ` <span style="color:var(--cut);font-weight:600;">— เกินงบ ${budgetInfo.moneyBudget.toLocaleString()} บาท</span>`
+      : ` (งบที่ตั้งไว้ ${budgetInfo.moneyBudget.toLocaleString()} บาท)`;
+  }
+  document.getElementById('tripBody').innerHTML = `<div class="tripsummary">${budgetLine}</div>` + bodyHtml;
+
+  if(map && bounds.length) map.fitBounds(bounds, {padding:[30,30]});
+  document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
+}
+</script>
+</body>
+</html>
