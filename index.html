@@ -128,6 +128,16 @@
   .bulk-status{font-size:13px;line-height:1.7;margin-top:8px;}
   .bulk-status .ok{color:var(--trail-dark);} .bulk-status .bad{color:var(--cut);font-weight:600;}
   .stop.notfound{border-color:var(--cut);background:#F8ECE8;}
+  .pin-btn{background:none;border:1px solid var(--line);border-radius:10px;font-size:18px;cursor:pointer;padding:0 10px;flex-shrink:0;}
+  .stop.notfound .pin-btn{border-color:var(--cut);background:var(--white);animation:pinPulse 1.4s ease-in-out infinite;}
+  @keyframes pinPulse{50%{box-shadow:0 0 0 5px rgba(162,62,46,.18);}}
+  .pin-inline{border:1px solid var(--cut);background:var(--white);color:var(--cut);border-radius:8px;padding:2px 10px;
+    font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-left:4px;}
+  .pin-modal{position:fixed;inset:0;z-index:1000;background:rgba(20,30,20,.55);display:flex;align-items:flex-end;justify-content:center;}
+  .pin-sheet{background:var(--white);width:100%;max-width:760px;border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));
+    display:flex;flex-direction:column;gap:12px;max-height:92vh;}
+  #pinMap{width:100%;height:55vh;border-radius:12px;border:1px solid var(--line);}
+  .pin-actions{display:flex;flex-direction:column;gap:10px;}
   .suggest-dropdown{position:absolute;left:0;right:0;top:100%;background:var(--white);border:1px solid var(--line);
     border-top:none;border-radius:0 0 10px 10px;max-height:220px;overflow-y:auto;z-index:50;display:none;box-shadow:0 4px 10px rgba(34,48,31,.08);}
   .suggest-item{padding:9px 10px;font-size:13px;border-bottom:1px solid var(--paper-2);cursor:pointer;}
@@ -261,6 +271,22 @@
 
   <div id="errorBox"></div>
 
+  <div id="pinModal" class="pin-modal" style="display:none;">
+    <div class="pin-sheet">
+      <div class="pin-head">
+        <div><b>📍 ปักหมุด: <span id="pinName"></span></b><div class="hint" style="margin-top:2px;">แตะบนแผนที่ตรงตำแหน่งสถานที่ (เปลี่ยนเป็นภาพดาวเทียมได้ที่มุมขวาบน)</div></div>
+      </div>
+      <div id="pinMap"></div>
+      <div class="pin-actions">
+        <button class="add-btn" id="pinHereBtn" style="margin:0;">ใช้ตำแหน่งที่ฉันอยู่ตอนนี้</button>
+        <div class="two-col">
+          <button class="add-btn" id="pinCancelBtn" style="margin:0;">ยกเลิก</button>
+          <button class="calc-btn" id="pinOkBtn" style="margin:0;" disabled>ใช้ตำแหน่งนี้</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="results" style="display:none;">
     <div id="map"></div>
     <div class="summary" id="summaryBox"></div>
@@ -344,16 +370,17 @@ function fuzzyNameRegex(q){
 async function fuzzySearchNearby(q, lat, lng, limit){
   const rx = fuzzyNameRegex(q);
   if(!rx) return [];
-  const query = `[out:json][timeout:20];nwr["name"~"${rx}",i](around:80000,${lat},${lng});out center 30;`;
+  const ar = `(around:80000,${lat},${lng})`;
+  const query = `[out:json][timeout:20];(nwr["name"~"${rx}",i]${ar};nwr["name:th"~"${rx}",i]${ar};nwr["alt_name"~"${rx}",i]${ar};nwr["old_name"~"${rx}",i]${ar};);out center 30;`;
   try{
     const res = await fetch('https://overpass-api.de/api/interpreter', {method:'POST', body:'data=' + encodeURIComponent(query)});
     const data = await res.json();
     const want = normThai(q);
     return (data.elements || []).map(el => {
       const elat = el.lat ?? (el.center && el.center.lat), elon = el.lon ?? (el.center && el.center.lon);
-      const name = el.tags['name:th'] || el.tags.name;
+      const name = el.tags['name:th'] || el.tags.name || el.tags.alt_name || q;
       const area = [el.tags['addr:subdistrict'], el.tags['addr:district'], el.tags['addr:province']].filter(Boolean).join(', ');
-      const exact = normThai(el.tags.name || '') === want ? 0 : 1;
+      const exact = [el.tags.name, el.tags['name:th'], el.tags.alt_name].some(n => n && normThai(n) === want) ? 0 : 1;
       return {lat:elat, lon:elon, name, namedetails:{name}, display_name: name + (area ? ', ' + area : ', ใกล้จุดเริ่มต้น'),
         _rank: exact*1e7 + haversine(lat, lng, elat, elon)};
     }).filter(d => d.lat != null).sort((a,b) => a._rank - b._rank).slice(0, limit);
@@ -400,6 +427,7 @@ function addStopRow(){
   div.innerHTML = `
     <div class="stoprow">
       <input type="text" id="stopname-${id}" placeholder="ชื่อสถานที่ / ที่อยู่" autocomplete="off">
+      <button class="pin-btn" title="ปักหมุดบนแผนที่" onclick="openPinPicker(${id})">📍</button>
       <button class="remove-btn" onclick="removeStop(${id})">✕</button>
     </div>
     <div class="subrow">
@@ -653,7 +681,7 @@ document.getElementById('bulkBtn').addEventListener('click', async () => {
       } else {
         input.value = name;
         document.getElementById('stop-' + stopCount).classList.add('notfound');
-        lines.push(`<span class="bad">✗ ${name} — หาไม่เจอ ลองพิมพ์ชื่อใหม่ในช่องสีแดงแล้วเลือกจากรายการ</span>`);
+        lines.push(`<span class="bad">✗ ${name} — หาไม่เจอในแผนที่ฟรี</span> <button class="pin-inline" onclick="openPinPicker(${stopCount})">📍 ปักหมุดเอง</button>`);
       }
       status.innerHTML = lines.join('<br>');
       if(i < names.length-1) await sleep(1100); // free search service allows ~1 request/second
@@ -666,6 +694,62 @@ document.getElementById('bulkBtn').addEventListener('click', async () => {
     btn.disabled = false;
     btn.textContent = 'ค้นหาและเพิ่มทั้งหมด';
   }
+});
+
+// ---------- Manual pin picker ----------
+let pinMap = null, pinMarker = null, pinTargetId = null, pinLatLng = null;
+function openPinPicker(id){
+  pinTargetId = id; pinLatLng = null;
+  const input = document.getElementById('stopname-' + id);
+  if(!input) return;
+  document.getElementById('pinName').textContent = input.value || 'สถานที่';
+  document.getElementById('pinOkBtn').disabled = true;
+  document.getElementById('pinModal').style.display = 'flex';
+  if(typeof L === 'undefined'){ alert('โหลดแผนที่ไม่สำเร็จ ลองรีเฟรชหน้าอีกครั้ง'); closePinPicker(); return; }
+  const st = document.getElementById('startInput');
+  let center = [18.79, 98.98], zoom = 12;
+  if(input.dataset.lat){ center = [+input.dataset.lat, +input.dataset.lng]; zoom = 16; }
+  else if(st.dataset.lat){ center = [+st.dataset.lat, +st.dataset.lng]; zoom = 14; }
+  if(!pinMap){
+    pinMap = L.map('pinMap');
+    const street = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'&copy; OpenStreetMap'});
+    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {maxZoom:19, attribution:'Imagery &copy; Esri'});
+    street.addTo(pinMap);
+    L.control.layers({'แผนที่':street, 'ดาวเทียม':sat}, null, {position:'topright'}).addTo(pinMap);
+    pinMap.on('click', e => setPin(e.latlng.lat, e.latlng.lng));
+  }
+  pinMap.setView(center, zoom);
+  if(pinMarker){ pinMap.removeLayer(pinMarker); pinMarker = null; }
+  if(input.dataset.lat) setPin(+input.dataset.lat, +input.dataset.lng);
+  setTimeout(() => pinMap.invalidateSize(), 60);
+}
+function setPin(lat, lng){
+  pinLatLng = {lat, lng};
+  if(pinMarker) pinMarker.setLatLng([lat, lng]);
+  else pinMarker = L.marker([lat, lng], {icon: L.divIcon({className:'', html:'<div style="font-size:34px;line-height:1;transform:translate(-50%,-100%);position:absolute;">📍</div>', iconSize:[0,0]})}).addTo(pinMap);
+  document.getElementById('pinOkBtn').disabled = false;
+}
+function closePinPicker(){ document.getElementById('pinModal').style.display = 'none'; }
+document.getElementById('pinCancelBtn').addEventListener('click', closePinPicker);
+document.getElementById('pinModal').addEventListener('click', e => { if(e.target.id === 'pinModal') closePinPicker(); });
+document.getElementById('pinHereBtn').addEventListener('click', () => {
+  if(!navigator.geolocation){ alert('อุปกรณ์นี้ไม่รองรับการหาตำแหน่ง'); return; }
+  navigator.geolocation.getCurrentPosition(
+    pos => { setPin(pos.coords.latitude, pos.coords.longitude); pinMap.setView([pos.coords.latitude, pos.coords.longitude], 17); },
+    () => alert('หาตำแหน่งไม่ได้ ตรวจสอบว่าเปิด GPS และอนุญาตตำแหน่งให้เบราว์เซอร์แล้ว'),
+    {enableHighAccuracy:true, timeout:15000});
+});
+document.getElementById('pinOkBtn').addEventListener('click', () => {
+  if(!pinLatLng) return;
+  const input = document.getElementById('stopname-' + pinTargetId);
+  if(input){
+    input.dataset.lat = pinLatLng.lat; input.dataset.lng = pinLatLng.lng;
+    input.title = 'ปักหมุดเอง';
+    const row = document.getElementById('stop-' + pinTargetId); if(row) row.classList.remove('notfound');
+    checkCanCalc(); saveToStorage();
+  }
+  closePinPicker();
 });
 
 async function geocodeIfNeeded(input){
