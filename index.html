@@ -268,8 +268,12 @@
         <label class="label" for="bulkInput">📝 วางรายชื่อสถานที่ (บรรทัดละ 1 ที่) — ไม่ต้องเรียงลำดับ</label>
         <textarea id="bulkInput" rows="4" placeholder="เช่น&#10;วัดป่าแดด&#10;วัดช่อแล 18.8312, 98.9455&#10;วัดแม่อ่อน QX5V+2M&#10;ศาลหลักเมือง"></textarea>
         <div class="hint">ใส่แค่ชื่อก็ได้ ระบบหาที่ที่ใกล้จุดเริ่มต้นให้ ถ้าที่ไหนหาไม่เจอ ใส่พิกัดหรือ Plus Code ต่อท้ายชื่อได้<br>
-        <b>วิธีเอาพิกัดจาก Google Maps:</b> กดค้างที่หมุดสถานที่ → ตัวเลขพิกัดขึ้นในช่องค้นหาด้านบน แตะค้างเพื่อคัดลอก หรือคัดลอก Plus Code (รหัสแบบ QX5V+2M) จากหน้าข้อมูลสถานที่</div>
-        <button class="add-btn" id="bulkBtn" style="margin:10px 0 0;">ค้นหาและเพิ่มทั้งหมด</button>
+        <b>เอาตำแหน่งจาก Google Maps (ง่ายสุด):</b> เปิดสถานที่ แตะที่<b>ช่องค้นหาด้านบน</b> ที่ขึ้นรหัสแบบ <b>V8CM+P7F ชื่อสถานที่</b> → กดค้าง → เลือกทั้งหมด → คัดลอก แล้วกด 📋 วาง ได้ทั้งบรรทัด<br>
+        หรือแตะบรรทัดที่อยู่ในหน้าข้อมูลสถานที่ (Google จะคัดลอกให้) ส่วนการกดค้างบนแผนที่ ให้กดค้างที่<b>ข้างๆ หมุด</b> ไม่ใช่บนหมุด</div>
+        <div class="two-col" style="margin-top:10px;">
+          <button class="add-btn" id="pasteBtn" style="margin:0;flex:0 0 auto;width:auto;padding:14px 16px;">📋 วาง</button>
+          <button class="add-btn" id="bulkBtn" style="margin:0;">ค้นหาและเพิ่มทั้งหมด</button>
+        </div>
         <div id="bulkStatus" class="bulk-status"></div>
       </div>
       <div id="stopsList"></div>
@@ -799,7 +803,11 @@ function parsePlaceLine(line){
   if(m && m[1].indexOf('+') >= 2){
     const before = line.slice(0, m.index).replace(/[\s,:-]+$/,'').trim();
     const after = line.slice(m.index + m[0].length).replace(/^[\s,]+/,'').trim();
-    return {name: before, plus: m[1].toUpperCase(), locality: after};
+    // Text after the code is either an address ("ตำบล ... อำเภอ ...") or, when copied
+    // from the Google Maps search bar, the place name ("V8CM+P7F วัด...").
+    const isAddress = /ตำบล|อำเภอ|จังหวัด|แขวง|เขต|(^|\s)(ต|อ|จ)\./.test(after);
+    const name = before || (isAddress ? '' : after.split(/[,(]/)[0].trim());
+    return {name, plus: m[1].toUpperCase(), locality: isAddress ? after : ''};
   }
   return {name: line.trim()};
 }
@@ -831,13 +839,28 @@ async function resolvePlaceLine(line){
     if(!ref && p.locality){ try{ const r = await searchPlaces(p.locality, 1); if(r[0]) ref = {lat:+r[0].lat, lng:+r[0].lon}; }catch(e){} }
     if(!ref && p.plus.indexOf('+') < 8) return null;
     const c = olcRecover(p.plus, ref ? ref.lat : 0, ref ? ref.lng : 0);
-    return {name: p.name || p.plus, lat: c.lat, lng: c.lng, how: 'Plus Code'};
+    let nm = p.name;
+    if(!nm){ try{ nm = (await reverseGeocodeOSM(c.lat, c.lng)).split(',')[0]; }catch(e){} }
+    return {name: nm || p.plus, lat: c.lat, lng: c.lng, how: 'Plus Code'};
   }
   const r = await searchPlaces(p.name, 1);
   if(!r[0]) return null;
   return {name: shortPlaceName(r[0]), lat: +r[0].lat, lng: +r[0].lon, full: r[0].display_name, how: 'ค้นชื่อ'};
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+document.getElementById('pasteBtn').addEventListener('click', async () => {
+  const box = document.getElementById('bulkInput');
+  try{
+    const t = (await navigator.clipboard.readText()).trim();
+    if(!t){ document.getElementById('bulkStatus').innerHTML = '<span class="bad">คลิปบอร์ดว่าง คัดลอกจาก Google Maps ก่อน</span>'; return; }
+    box.value = box.value.trim() ? box.value.trim() + '\n' + t : t;
+    box.dispatchEvent(new Event('input', {bubbles:true}));
+  }catch(e){
+    box.focus();
+    document.getElementById('bulkStatus').innerHTML = '<span class="bad">เบราว์เซอร์ไม่ให้อ่านคลิปบอร์ด — กดค้างในช่องด้านบนแล้วเลือก "วาง" แทน</span>';
+  }
+});
 
 document.getElementById('bulkBtn').addEventListener('click', async () => {
   const btn = document.getElementById('bulkBtn');
