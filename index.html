@@ -120,6 +120,12 @@
   .error-box{background:#F6E4DE;border:1px solid var(--cut);color:var(--cut);border-radius:10px;padding:14px;font-size:13px;margin-top:12px;}
   .saved-note{font-size:11px;color:var(--trail);text-align:center;margin-top:8px;min-height:14px;transition:opacity .3s;}
 
+  textarea{width:100%;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--white);
+    color:var(--ink);font-size:16px;font-family:inherit;line-height:1.6;resize:vertical;}
+  textarea:focus{outline:2px solid var(--trail);outline-offset:1px;}
+  .bulk-status{font-size:13px;line-height:1.7;margin-top:8px;}
+  .bulk-status .ok{color:var(--trail-dark);} .bulk-status .bad{color:var(--cut);font-weight:600;}
+  .stop.notfound{border-color:var(--cut);background:#F8ECE8;}
   .suggest-dropdown{position:absolute;left:0;right:0;top:100%;background:var(--white);border:1px solid var(--line);
     border-top:none;border-radius:0 0 10px 10px;max-height:220px;overflow-y:auto;z-index:50;display:none;box-shadow:0 4px 10px rgba(34,48,31,.08);}
   .suggest-item{padding:9px 10px;font-size:13px;border-bottom:1px solid var(--paper-2);cursor:pointer;}
@@ -199,6 +205,13 @@
 
     <div class="card">
       <div class="card-title"><span class="ico">🚩</span> จุดที่ต้องไป</div>
+      <div class="field">
+        <label class="label" for="bulkInput">📝 วางรายชื่อสถานที่ (บรรทัดละ 1 ที่) — ไม่ต้องเรียงลำดับ</label>
+        <textarea id="bulkInput" rows="4" placeholder="เช่น&#10;วัดป่าแดด&#10;วัดโลกโมฬี&#10;ศาลหลักเมือง&#10;มอนกาแฟ"></textarea>
+        <div class="hint">ระบบจะหาตำแหน่งให้เอง โดยเลือกที่ที่ใกล้จุดเริ่มต้นก่อน (ชื่อซ้ำกันหลายจังหวัดก็ไม่ผิดที่) แล้วค่อยกด "คำนวณเส้นทาง" เพื่อดูว่าควรไปที่ไหนก่อน</div>
+        <button class="add-btn" id="bulkBtn" style="margin:10px 0 0;">ค้นหาและเพิ่มทั้งหมด</button>
+        <div id="bulkStatus" class="bulk-status"></div>
+      </div>
       <div id="stopsList"></div>
       <button class="add-btn" id="addStopBtn">+ เพิ่มจุด</button>
     </div>
@@ -297,6 +310,25 @@ function syncTripTypeFields(){
 
 function debounce(fn, wait){ let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); }; }
 
+function shortPlaceName(d){
+  return (d.namedetails && (d.namedetails['name:th'] || d.namedetails.name)) || d.name || d.display_name.split(',')[0];
+}
+// Search places, preferring results near the start point (same-name places exist in many provinces).
+async function searchPlaces(q, limit){
+  const base = `https://nominatim.openstreetmap.org/search?format=json&namedetails=1&accept-language=th&limit=${limit}&q=${encodeURIComponent(q)}`;
+  const st = document.getElementById('startInput');
+  if(st && st.dataset.lat){
+    const lat = parseFloat(st.dataset.lat), lng = parseFloat(st.dataset.lng), r = 0.7;
+    const vb = `&viewbox=${lng-r},${lat+r},${lng+r},${lat-r}`;
+    try{
+      const near = await (await fetch(base + vb + '&bounded=1')).json();
+      if(near.length) return near;
+    }catch(e){}
+    return await (await fetch(base + vb)).json();
+  }
+  return await (await fetch(base)).json();
+}
+
 function attachPlaceSearch(input){
   const dropdown = document.createElement('div');
   dropdown.className = 'suggest-dropdown';
@@ -306,8 +338,7 @@ function attachPlaceSearch(input){
     const q = input.value.trim();
     if(q.length < 3){ dropdown.style.display = 'none'; return; }
     try{
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`);
-      const data = await res.json();
+      const data = await searchPlaces(q, 5);
       if(!data.length){ dropdown.style.display = 'none'; return; }
       dropdown.innerHTML = data.map((d,i) => `<div class="suggest-item" data-i="${i}">${d.display_name}</div>`).join('');
       dropdown.style.display = 'block';
@@ -315,8 +346,10 @@ function attachPlaceSearch(input){
         el.addEventListener('mousedown', (e) => {
           e.preventDefault();
           const d = data[el.dataset.i];
-          input.value = d.display_name;
+          input.value = input.id === 'startInput' ? d.display_name : shortPlaceName(d);
+          input.title = d.display_name;
           input.dataset.lat = d.lat; input.dataset.lng = d.lon;
+          const row = input.closest('.stop'); if(row) row.classList.remove('notfound');
           dropdown.style.display = 'none';
           checkCanCalc(); saveToStorage();
         });
@@ -544,12 +577,69 @@ function checkCanCalc(){
 
 document.getElementById('calcBtn').addEventListener('click', () => { saveToStorage(); runOptimization(); });
 
+function parsePlaceList(text){
+  const seen = new Set();
+  return text.split(/\n|,|、/)
+    .map(l => l.replace(/^\s*([-•*·]|\d+[.)])\s*/, '').trim())
+    .filter(l => l && !seen.has(l) && seen.add(l));
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+document.getElementById('bulkBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('bulkBtn');
+  const status = document.getElementById('bulkStatus');
+  const names = parsePlaceList(document.getElementById('bulkInput').value);
+  if(!names.length){ status.innerHTML = '<span class="bad">ยังไม่มีชื่อสถานที่ในช่องด้านบน</span>'; return; }
+  btn.disabled = true;
+  const lines = [];
+  try{
+    // Resolve the start point first so searches can prefer nearby places.
+    const st = document.getElementById('startInput');
+    if(st.value.trim() && !st.dataset.lat){
+      try{ const sp = await searchPlaces(st.value.trim(), 1);
+        if(sp.length){ st.dataset.lat = sp[0].lat; st.dataset.lng = sp[0].lon; } }catch(e){}
+      await sleep(1100);
+    }
+    // Drop empty rows so the list only holds real places.
+    document.querySelectorAll('#stopsList .stop').forEach(row => {
+      if(!row.querySelector('input[id^="stopname-"]').value.trim()) row.remove();
+    });
+    for(let i=0;i<names.length;i++){
+      const name = names[i];
+      btn.textContent = `กำลังค้นหา ${i+1}/${names.length}...`;
+      const coords = extractLatLngFromUrl(name);
+      let found = null;
+      if(coords) found = {lat:coords.lat, lon:coords.lng, display_name:name, name:await reverseGeocodeOSM(coords.lat, coords.lng)};
+      else { try{ const r = await searchPlaces(name, 1); found = r[0] || null; }catch(e){} }
+      addStopRow();
+      const input = document.getElementById('stopname-' + stopCount);
+      if(found){
+        input.value = coords ? found.name : shortPlaceName(found);
+        input.title = found.display_name;
+        input.dataset.lat = found.lat; input.dataset.lng = found.lon;
+        const area = (found.display_name || '').split(',').slice(1,3).join(',').trim();
+        lines.push(`<span class="ok">✓ ${name}</span>${area ? ` <span style="color:var(--ink-soft)">— ${area}</span>` : ''}`);
+      } else {
+        input.value = name;
+        document.getElementById('stop-' + stopCount).classList.add('notfound');
+        lines.push(`<span class="bad">✗ ${name} — หาไม่เจอ ลองพิมพ์ชื่อใหม่ในช่องสีแดงแล้วเลือกจากรายการ</span>`);
+      }
+      status.innerHTML = lines.join('<br>');
+      if(i < names.length-1) await sleep(1100); // free search service allows ~1 request/second
+    }
+    document.getElementById('bulkInput').value = '';
+    checkCanCalc(); saveToStorage();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'ค้นหาและเพิ่มทั้งหมด';
+  }
+});
+
 async function geocodeIfNeeded(input){
   if(input.dataset.lat && input.dataset.lng){
     return {lat:parseFloat(input.dataset.lat), lng:parseFloat(input.dataset.lng), label:input.value};
   }
-  const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(input.value)}`);
-  const data = await res.json();
+  const data = await searchPlaces(input.value, 1);
   if(!data.length) throw new Error('หาตำแหน่งไม่พบ: "' + input.value + '" ลองพิมพ์ให้ชัดเจนขึ้นหรือเลือกจากรายการที่ระบบเสนอ');
   return {lat:parseFloat(data[0].lat), lng:parseFloat(data[0].lon), label:input.value};
 }
