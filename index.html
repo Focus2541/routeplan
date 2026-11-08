@@ -360,8 +360,9 @@
 <script>
 // ---------- Version ----------
 // Bump APP_VERSION and add a line at the top of RELEASES on every release.
-const APP_VERSION = '1.11';
+const APP_VERSION = '1.12';
 const RELEASES = [
+  ['1.12', '9 พ.ย. 2569', 'ตอนกดคำนวณ ใช้วิธีหาตำแหน่งแบบใหม่ด้วย (แยกชื่อกับที่อยู่, Plus Code, จุดกลางตำบล) และจำตำแหน่งที่หาเจอไว้'],
   ['1.11', '9 พ.ย. 2569', 'เลขเวอร์ชันและประวัติการอัปเดต'],
   ['1.10', '9 พ.ย. 2569', 'รวมข้อความ 2 บรรทัดที่คัดลอกจาก Google เป็นที่เดียว · ค้นจากชื่อแยกจากที่อยู่ · ใช้จุดกลางตำบลเมื่อหาไม่เจอ'],
   ['1.9',  '9 พ.ย. 2569', 'วางข้อความจากช่องค้นหา Google Maps ได้ทั้งบรรทัด · ปุ่ม 📋 วาง'],
@@ -1058,14 +1059,18 @@ async function geocodeIfNeeded(input){
   if(input.dataset.lat && input.dataset.lng){
     return {lat:parseFloat(input.dataset.lat), lng:parseFloat(input.dataset.lng), label:input.value};
   }
-  const pl = parsePlaceLine(input.value);
-  if(pl.lat != null || pl.plus){
-    const r = await resolvePlaceLine(input.value);
-    if(r) return {lat: r.lat, lng: r.lng, label: r.name};
+  const r = await resolvePlaceLine(input.value);
+  if(!r) throw new Error('หาตำแหน่งไม่พบ: "' + input.value + '" ลองพิมพ์ให้ชัดเจนขึ้นหรือปักหมุดเอง');
+  // Save what we found so the next calculation is instant and the field shows a clean name.
+  if(input.id !== 'startInput'){
+    input.value = r.name;
+    input.title = r.full || r.how;
   }
-  const data = await searchPlaces(input.value, 1);
-  if(!data.length) throw new Error('หาตำแหน่งไม่พบ: "' + input.value + '" ลองพิมพ์ให้ชัดเจนขึ้นหรือเลือกจากรายการที่ระบบเสนอ');
-  return {lat:parseFloat(data[0].lat), lng:parseFloat(data[0].lon), label:input.value};
+  input.dataset.lat = r.lat; input.dataset.lng = r.lng;
+  const row = input.closest('.stop');
+  if(row) row.classList.toggle('notfound', !!r.approx);
+  if(r.approx) (window._approxPlaces = window._approxPlaces || []).push({name: r.name, area: r.approx});
+  return {lat: r.lat, lng: r.lng, label: input.id === 'startInput' ? input.value : r.name};
 }
 
 function tourTime(order, mat, visitSec){
@@ -1432,10 +1437,12 @@ async function runOptimization(){
     startInput.dataset.lat = startPoint.lat; startInput.dataset.lng = startPoint.lng;
     const stopData = [];
     const skipped = [];
+    window._approxPlaces = [];
     for(const el of stopEls){
       const id = el.id.match(/stop-(\d+)/)[1];
       const nameInput = document.getElementById('stopname-' + id);
       if(!nameInput.value.trim()) continue;
+      if(!nameInput.dataset.lat) document.getElementById('calcBtn').textContent = `กำลังหาตำแหน่ง: ${nameInput.value.split(/\s/)[0]}...`;
       let pt;
       try{ pt = await geocodeIfNeeded(nameInput); }
       catch(e){ skipped.push(nameInput.value.trim()); el.classList.add('notfound'); continue; }
@@ -1450,6 +1457,8 @@ async function runOptimization(){
     }
     if(stopData.length === 0) throw new Error(skipped.length ? 'หาตำแหน่งสถานที่ไม่เจอเลย: ' + skipped.join(', ') : 'กรุณาเพิ่มอย่างน้อย 1 จุดที่ต้องไป');
     window._skippedPlaces = skipped;
+    saveToStorage();
+    document.getElementById('calcBtn').textContent = 'กำลังคำนวณเส้นทาง...';
     if(stopData.length > 40) throw new Error('จุดเยอะเกินไปสำหรับเซิร์ฟเวอร์ OSRM สาธารณะ (แนะนำไม่เกิน 40 จุด)');
 
     const allPoints = [{...startPoint, durationSec:0, priority:99, costBaht:0, openSec:0, closeSec:48*3600}, ...stopData];
@@ -1687,9 +1696,11 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
       ? ` <span style="color:var(--cut);font-weight:600;">— เกินงบ ${budgetInfo.moneyBudget.toLocaleString()} บาท</span>`
       : ` (งบที่ตั้งไว้ ${budgetInfo.moneyBudget.toLocaleString()} บาท)`;
   }
+  const ap = window._approxPlaces || [];
+  const apHtml = ap.length ? `<div class="mode-line" style="background:#FBEFE3;">≈ ตำแหน่งโดยประมาณ (ใช้จุดกลางตำบล อาจคลาดหลายกม.): <b>${ap.map(a => a.name).join(', ')}</b> — กด 📍 ที่ช่องนั้นเพื่อปักหมุดให้ตรง</div>` : '';
   const sk = window._skippedPlaces || [];
   const skHtml = sk.length ? `<div class="error-box" style="margin-top:12px;">ไม่ได้รวมในเส้นทาง เพราะหาตำแหน่งไม่เจอ: <b>${sk.join(', ')}</b> — แก้ชื่อในช่องกรอบแดงแล้วกดคำนวณใหม่</div>` : '';
-  document.getElementById('tripBody').innerHTML = skHtml + modeLine + `<div class="tripsummary">${budgetLine}</div>` + bodyHtml;
+  document.getElementById('tripBody').innerHTML = skHtml + apHtml + modeLine + `<div class="tripsummary">${budgetLine}</div>` + bodyHtml;
 
   if(map && bounds.length) map.fitBounds(bounds, {padding:[30,30]});
   document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
