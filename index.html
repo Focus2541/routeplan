@@ -118,6 +118,15 @@
     .summary div:nth-child(2n){border-right:none;}
     .summary div:nth-last-child(-n+2){border-bottom:none;}
   }
+  .seg{display:flex;gap:4px;padding:4px;background:var(--paper-2);border-radius:12px;}
+  .seg-btn{flex:1;min-height:44px;padding:8px 6px;border:none;border-radius:9px;background:transparent;
+    color:var(--ink-soft);font-family:'IBM Plex Sans Thai',sans-serif;font-size:14px;font-weight:500;line-height:1.3;
+    cursor:pointer;transition:background .15s,color .15s;}
+  .seg-btn.on{background:var(--white);color:var(--trail-dark);font-weight:600;box-shadow:0 1px 3px rgba(34,48,31,.15);}
+  .seg-btn:focus-visible{outline:2px solid var(--trail);outline-offset:1px;}
+  .stop .seg{background:var(--white);border:1px solid var(--line);}
+  .stop .seg-btn.on{background:var(--trail-dark);color:var(--white);box-shadow:none;}
+  .stop .subrow > .prio-wrap{flex:1 1 100%;order:-1;}
   .choice-group{display:flex;flex-direction:column;gap:8px;}
   .choice{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;
     border:1.5px solid var(--line);border-radius:12px;background:var(--white);color:var(--ink);
@@ -197,8 +206,8 @@
       <div class="field">
         <label class="label" for="tripType">รูปแบบทริป</label>
         <select id="tripType">
-          <option value="single">วันเดียว (จำกัดเวลา/งบ)</option>
-          <option value="multi">หลายวัน (ทริปต่างจังหวัด)</option>
+          <option value="single">☀️ วันเดียว</option>
+          <option value="multi">🧳 หลายวัน</option>
         </select>
       </div>
       <div class="field">
@@ -231,10 +240,10 @@
           <input type="time" id="endTime" value="18:00">
         </div>
         <div>
-          <label class="label" for="returnStart">กลับจุดเริ่มต้นไหม</label>
+          <label class="label" for="returnStart">🔁 กลับจุดเริ่มต้นไหม</label>
           <select id="returnStart">
-            <option value="yes">วนกลับจุดเริ่มต้น</option>
-            <option value="no">ไม่ต้องกลับ</option>
+            <option value="yes">วนกลับ</option>
+            <option value="no">ไม่กลับ</option>
           </select>
         </div>
       </div>
@@ -246,8 +255,8 @@
         <div>
           <label class="label" for="returnStartMulti">วันสุดท้ายกลับจุดเริ่มต้นไหม</label>
           <select id="returnStartMulti">
-            <option value="yes">วนกลับจุดเริ่มต้น</option>
-            <option value="no">ไม่ต้องกลับ</option>
+            <option value="yes">วนกลับ</option>
+            <option value="no">ไม่กลับ</option>
           </select>
         </div>
       </div>
@@ -276,10 +285,10 @@
             <input type="number" id="budgetLimit" placeholder="เว้นว่าง = ไม่จำกัด" min="0">
           </div>
           <div>
-            <label class="label" for="checkWeather">เช็คสภาพอากาศ</label>
+            <label class="label" for="checkWeather">🌧️ เช็คฝน (ล่วงหน้า ~15 วัน)</label>
             <select id="checkWeather">
-              <option value="yes">เช็ค (พยากรณ์ล่วงหน้าได้ ~15 วัน)</option>
-              <option value="no">ไม่ต้องเช็ค</option>
+              <option value="yes">เช็ค</option>
+              <option value="no">ไม่เช็ค</option>
             </select>
           </div>
         </div>
@@ -368,6 +377,39 @@ function initMap(){
   }
 }
 
+// Turn native dropdowns into in-page buttons (phones draw dropdown lists in the system font).
+function enhanceSelect(sel){
+  if(sel.dataset.enh || sel.id === 'orderMode') return;
+  sel.dataset.enh = '1';
+  const g = document.createElement('div');
+  g.className = 'seg';
+  g.setAttribute('role', 'radiogroup');
+  for(const opt of sel.options){
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'seg-btn'; b.dataset.value = opt.value;
+    b.setAttribute('role', 'radio'); b.textContent = opt.textContent;
+    b.addEventListener('click', () => {
+      sel.value = opt.value; syncSelect(sel);
+      sel.dispatchEvent(new Event('change', {bubbles:true}));
+    });
+    g.appendChild(b);
+  }
+  sel.hidden = true;
+  sel.insertAdjacentElement('afterend', g);
+  syncSelect(sel);
+}
+function syncSelect(sel){
+  const g = sel.nextElementSibling;
+  if(!g || !g.classList.contains('seg')) return;
+  g.querySelectorAll('.seg-btn').forEach(b => {
+    const on = b.dataset.value === sel.value;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+}
+function enhanceAllSelects(){ document.querySelectorAll('select').forEach(enhanceSelect); }
+function syncAllChoices(){ document.querySelectorAll('select[data-enh]').forEach(syncSelect); syncOrderChoices(); }
+
 function syncOrderChoices(){
   const v = document.getElementById('orderMode').value;
   document.querySelectorAll('#orderChoices .choice').forEach(b => {
@@ -386,7 +428,7 @@ document.getElementById('orderChoices').addEventListener('click', e => {
 });
 
 function syncTripTypeFields(){
-  syncOrderChoices();
+  syncAllChoices();
   const isMulti = document.getElementById('tripType').value === 'multi';
   document.getElementById('singleDayFields').style.display = isMulti ? 'none' : 'flex';
   document.getElementById('multiDayFields').style.display = isMulti ? 'flex' : 'none';
@@ -489,7 +531,7 @@ function addStopRow(){
     </div>
     <div class="subrow">
       <div><label>อยู่กี่นาที</label><input type="number" id="stopdur-${id}" value="20" min="0"></div>
-      <div><label>ความสำคัญ</label>
+      <div class="prio-wrap"><label>ความสำคัญ</label>
         <select id="stopprio-${id}">
           <option value="3">สูง</option>
           <option value="2" selected>ปานกลาง</option>
@@ -504,6 +546,7 @@ function addStopRow(){
     </div>
   `;
   document.getElementById('stopsList').appendChild(div);
+  div.querySelectorAll('select').forEach(enhanceSelect);
   attachPlaceSearch(document.getElementById('stopname-' + id));
   checkCanCalc();
 }
@@ -629,6 +672,7 @@ function applyTrip(t){
     document.getElementById('stopopen-' + id).value = s.open || '';
     document.getElementById('stopclose-' + id).value = s.close || '';
   });
+  syncAllChoices();
   checkCanCalc();
 }
 
@@ -663,6 +707,7 @@ document.getElementById('formSection').addEventListener('input', () => { saveToS
 document.getElementById('formSection').addEventListener('change', () => { saveToStorageDebounced(); });
 
 document.addEventListener('DOMContentLoaded', function(){
+  enhanceAllSelects();
   initMap();
 
   attachPlaceSearch(document.getElementById('startInput'));
