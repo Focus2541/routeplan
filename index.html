@@ -113,6 +113,7 @@
   .suggestbox b{color:var(--trail-dark);}
   .calc-bar{position:sticky;bottom:0;z-index:30;padding:12px 0 calc(12px + env(safe-area-inset-bottom));
     background:linear-gradient(to bottom, rgba(243,239,228,0), var(--paper) 35%);}
+  .mode-line{margin-top:14px;padding:12px 14px;background:var(--paper-2);border-radius:10px;font-size:13px;line-height:1.8;}
   .routebtns{display:flex;flex-direction:column;gap:8px;margin:14px 0 18px;}
   .routebtn{display:block;text-align:center;padding:14px;border-radius:12px;background:var(--trail-dark);color:var(--white);
     font-family:'Kanit',sans-serif;font-weight:600;font-size:15px;text-decoration:none;}
@@ -184,6 +185,15 @@
         </select>
       </div>
       <div class="field">
+        <label class="label" for="orderMode">🔀 ลำดับการไป</label>
+        <select id="orderMode">
+          <option value="fastest">⚡ เร็วที่สุด — ระบบจัดลำดับให้ใช้เวลาน้อยที่สุด</option>
+          <option value="far">🏔️ ไกลสุดก่อน — แล้วไล่กลับมาใกล้จุดเริ่มต้น</option>
+          <option value="near">🏠 ใกล้สุดก่อน — แล้วค่อยไกลออกไป</option>
+        </select>
+        <div class="hint">"ไกล/ใกล้" วัดจากเวลาขับรถจากจุดเริ่มต้น ผลลัพธ์จะบอกว่าใช้เวลามากกว่าแบบเร็วที่สุดกี่นาที</div>
+      </div>
+      <div class="field">
         <label class="label" for="startDateTime">🕘 วันและเวลาที่ออกเดินทาง</label>
         <input type="datetime-local" id="startDateTime">
       </div>
@@ -195,8 +205,8 @@
         <div>
           <label class="label" for="returnStart">กลับจุดเริ่มต้นไหม</label>
           <select id="returnStart">
+            <option value="yes">วนกลับจุดเริ่มต้น</option>
             <option value="no">ไม่ต้องกลับ</option>
-            <option value="yes">ต้องกลับ</option>
           </select>
         </div>
       </div>
@@ -208,8 +218,8 @@
         <div>
           <label class="label" for="returnStartMulti">วันสุดท้ายกลับจุดเริ่มต้นไหม</label>
           <select id="returnStartMulti">
+            <option value="yes">วนกลับจุดเริ่มต้น</option>
             <option value="no">ไม่ต้องกลับ</option>
-            <option value="yes">ต้องกลับ</option>
           </select>
         </div>
       </div>
@@ -529,6 +539,7 @@ function serializeTrip(){
     startDateTime: document.getElementById('startDateTime').value,
     endTime: document.getElementById('endTime').value,
     returnStart: document.getElementById('returnStart').value,
+    orderMode: document.getElementById('orderMode').value,
     dayMinutes: document.getElementById('dayMinutes').value,
     returnStartMulti: document.getElementById('returnStartMulti').value,
     budgetLimit: document.getElementById('budgetLimit').value,
@@ -549,9 +560,10 @@ function applyTrip(t){
   syncTripTypeFields();
   if(t.startDateTime) document.getElementById('startDateTime').value = t.startDateTime;
   document.getElementById('endTime').value = t.endTime || '18:00';
-  document.getElementById('returnStart').value = t.returnStart || 'no';
+  document.getElementById('returnStart').value = t.returnStart || 'yes';
+  document.getElementById('orderMode').value = t.orderMode || 'fastest';
   document.getElementById('dayMinutes').value = t.dayMinutes || 600;
-  document.getElementById('returnStartMulti').value = t.returnStartMulti || 'no';
+  document.getElementById('returnStartMulti').value = t.returnStartMulti || 'yes';
   document.getElementById('budgetLimit').value = t.budgetLimit || '';
   document.getElementById('checkWeather').value = t.checkWeather || 'yes';
   document.getElementById('kmPerLiter').value = t.kmPerLiter || 12;
@@ -1155,6 +1167,44 @@ function buildMapsRouteLinks(seq, P){
   return links;
 }
 
+// Order places by driving time from the start point.
+function sortByDistance(mat, ks, mode){
+  return ks.slice().sort((a,b) => mode === 'far' ? mat[0][b] - mat[0][a] : mat[0][a] - mat[0][b]);
+}
+// Fixed far/near order for one day: drop the least important place until the day fits,
+// then put dropped places back wherever the order still works.
+function planOneDayOrdered(mat, P, cand, startSec, endSec, mustReturn, mode){
+  let keep = cand.slice();
+  const build = ks => [0, ...sortByDistance(mat, ks, mode)];
+  while(keep.length && !simulateDay(build(keep), mat, P, startSec, endSec, mustReturn).ok){
+    let worst = keep[0];
+    for(const k of keep){
+      if(P[k].priority < P[worst].priority ||
+        (P[k].priority === P[worst].priority && P[k].durationSec > P[worst].durationSec)) worst = k;
+    }
+    keep = keep.filter(k => k !== worst);
+  }
+  const dropped = cand.filter(k => !keep.includes(k)).sort((a,b) => P[b].priority - P[a].priority);
+  for(const k of dropped){
+    if(simulateDay(build([...keep, k]), mat, P, startSec, endSec, mustReturn).ok) keep.push(k);
+  }
+  return build(keep);
+}
+function driveSec(order, mat, mustReturn){
+  let t = 0;
+  for(let i=0;i<order.length-1;i++) t += mat[order[i]][order[i+1]];
+  if(mustReturn && order.length > 1) t += mat[order[order.length-1]][order[0]];
+  return t;
+}
+// Shortest possible driving time to visit the same places (for comparison).
+function fastestDriveSec(order, mat, mustReturn){
+  if(order.length < 3) return driveSec(order, mat, mustReturn);
+  const sub = order.slice();
+  const subMat = sub.map(a => sub.map(b => mat[a][b]));
+  const best = optimalOrder(subMat, sub.map(() => 0), mustReturn);
+  return driveSec(best.map(i => sub[i]), mat, mustReturn);
+}
+
 async function runOptimization(){
   document.getElementById('errorBox').innerHTML = '';
   document.getElementById('results').style.display = 'none';
@@ -1227,14 +1277,18 @@ async function runOptimization(){
       if(endSec <= startSec) endSec += 86400; // finishes after midnight
       let cand = allPoints.map((_,i)=>i).slice(1);
       const moneyCut = [];
-      let dayOrder = planOneDay(mat, allPoints, cand, startSec, endSec, mustReturn);
+      const orderMode = document.getElementById('orderMode').value;
+      const plan = c => orderMode === 'fastest'
+        ? planOneDay(mat, allPoints, c, startSec, endSec, mustReturn)
+        : planOneDayOrdered(mat, allPoints, c, startSec, endSec, mustReturn, orderMode);
+      let dayOrder = plan(cand);
       // Money budget: drop the least important visited place and re-plan until it fits.
       while(budgetLimit > 0 && dayOrder.length > 1 && moneyOf(dayOrder, mustReturn) > budgetLimit){
         let worst = dayOrder[1];
         for(const k of dayOrder.slice(1)) if(allPoints[k].priority < allPoints[worst].priority) worst = k;
         moneyCut.push(worst);
         cand = cand.filter(k => k !== worst);
-        dayOrder = planOneDay(mat, allPoints, cand, startSec, endSec, mustReturn);
+        dayOrder = plan(cand);
       }
       const sim = simulateDay(dayOrder, mat, allPoints, startSec, endSec, mustReturn);
       const visited = new Set(dayOrder);
@@ -1247,13 +1301,17 @@ async function runOptimization(){
         else cutReasons[k] = 'เวลาไม่พอในวันนี้ (ตัดจุดที่สำคัญน้อยกว่าออกก่อน)';
       });
       days = [dayOrder];
-      budgetInfo = {mustReturn, startSec, endSec, moneyBudget: budgetLimit,
+      budgetInfo = {mustReturn, startSec, endSec, moneyBudget: budgetLimit, orderMode,
+        extraDriveSec: driveSec(dayOrder, mat, mustReturn) - fastestDriveSec(dayOrder, mat, mustReturn),
         schedule: sim.ok ? sim.times : null, finishSec: sim.ok ? sim.finish : null, cutReasons};
     } else {
       const mustReturn = document.getElementById('returnStartMulti').value === 'yes';
       const dayMinutes = parseFloat(document.getElementById('dayMinutes').value) || 600;
+      const orderMode = document.getElementById('orderMode').value;
+      if(orderMode !== 'fastest') order = [0, ...sortByDistance(mat, order.slice(1), orderMode)];
       days = splitIntoDays(order, mat, visitSec, dayMinutes*60);
-      budgetInfo = {mustReturn, dayMinutes, moneyBudget: budgetLimit};
+      budgetInfo = {mustReturn, dayMinutes, moneyBudget: budgetLimit, orderMode,
+        extraDriveSec: driveSec(order, mat, mustReturn) - fastestDriveSec(order, mat, mustReturn)};
     }
 
     await renderResults(allPoints, days, cutStops, mat, distMat, visitSec, tripType, budgetInfo,
@@ -1349,8 +1407,11 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
       let metaText;
       if(pos===0 && d===0) metaText = sch ? `จุดเริ่มต้น · ออกเดินทาง ${fmtClock(sch.depart)}` : 'จุดเริ่มต้น';
       else if(isBoundaryRepeat) metaText = 'พักค้างคืนบริเวณนี้ / เริ่มวันถัดไป';
+      else if(budgetInfo.orderMode && budgetInfo.orderMode !== 'fastest' && !sch)
+        metaText = `เดินทาง ${fmtMin(mat[dayOrder[pos-1]][globalIdx])} นาที · ห่างจากจุดเริ่มต้น ${fmtMin(mat[0][globalIdx])} นาที`;
       else if(sch){
         metaText = `เดินทาง ${fmtMin(mat[dayOrder[pos-1]][globalIdx])} นาที · ถึง ${fmtClock(sch.arrive)}`;
+        if(budgetInfo.orderMode && budgetInfo.orderMode !== 'fastest') metaText = `ห่างจากจุดเริ่มต้น ${fmtMin(mat[0][globalIdx])} นาที · ` + metaText;
         if(sch.wait >= 60) warnHtml = `<div class="waitnote">⏳ รอเปิด ${fmtMin(sch.wait)} นาที (เปิด ${fmtClock(p.openSec)})</div>` + warnHtml;
         metaText += ` · ออก ${fmtClock(sch.depart)}`;
       } else metaText = `เดินทาง ${fmtMin(mat[dayOrder[pos-1]][globalIdx])} นาที · ถึงประมาณ ${cum.getHours()}:${String(cum.getMinutes()).padStart(2,'0')}`;
@@ -1412,6 +1473,14 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
   }
   document.getElementById('summaryBox').innerHTML = summaryHtml;
 
+  const modeName = {fastest:'⚡ เร็วที่สุด', far:'🏔️ ไกลสุดก่อน', near:'🏠 ใกล้สุดก่อน'}[budgetInfo.orderMode] || '';
+  let modeLine = '';
+  if(budgetInfo.orderMode && budgetInfo.orderMode !== 'fastest'){
+    const extra = Math.round((budgetInfo.extraDriveSec || 0) / 60);
+    modeLine = `<div class="mode-line">ลำดับแบบ <b>${modeName}</b> · ` + (extra >= 1
+      ? `ขับรถนานกว่าแบบเร็วที่สุด <b>${extra} นาที</b> <button class="pin-inline" style="border-color:var(--trail);color:var(--trail-dark);" onclick="document.getElementById('orderMode').value='fastest';saveToStorage();document.getElementById('calcBtn').click();">ลองแบบเร็วที่สุด</button>`
+      : `เป็นลำดับที่เร็วที่สุดอยู่แล้ว 👍`) + `</div>`;
+  }
   let budgetLine = `ระยะทางรวมประมาณ ${km} กม. · ค่าใช้จ่ายรวมประมาณ ${totalCost.toLocaleString()} บาท (น้ำมัน ${fuelCost.toLocaleString()} + ค่าเข้า/ใช้จ่าย ${stopsCostSum.toLocaleString()})`;
   if(budgetInfo.moneyBudget > 0){
     budgetLine += totalCost > budgetInfo.moneyBudget
@@ -1420,7 +1489,7 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
   }
   const sk = window._skippedPlaces || [];
   const skHtml = sk.length ? `<div class="error-box" style="margin-top:12px;">ไม่ได้รวมในเส้นทาง เพราะหาตำแหน่งไม่เจอ: <b>${sk.join(', ')}</b> — แก้ชื่อในช่องกรอบแดงแล้วกดคำนวณใหม่</div>` : '';
-  document.getElementById('tripBody').innerHTML = skHtml + `<div class="tripsummary">${budgetLine}</div>` + bodyHtml;
+  document.getElementById('tripBody').innerHTML = skHtml + modeLine + `<div class="tripsummary">${budgetLine}</div>` + bodyHtml;
 
   if(map && bounds.length) map.fitBounds(bounds, {padding:[30,30]});
   document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
