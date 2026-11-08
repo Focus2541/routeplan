@@ -25,6 +25,14 @@
   header{padding:6px 0 18px;border-bottom:1px solid var(--line);margin-bottom:22px;}
   header h1{font-size:27px;font-weight:700;color:var(--trail-dark);line-height:1.3;}
   header p{margin:8px 0 0;font-size:14px;color:var(--ink-soft);line-height:1.65;}
+  .ver-tag{vertical-align:middle;margin-left:6px;padding:3px 10px;border:1.5px solid var(--trail);border-radius:20px;
+    background:var(--white);color:var(--trail-dark);font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:500;cursor:pointer;}
+  .changelog{margin:12px 0 4px;padding:12px 14px;background:var(--white);border:1px solid var(--line);border-radius:12px;
+    font-size:13px;line-height:1.6;max-height:260px;overflow-y:auto;}
+  .changelog .rel{padding:6px 0;border-bottom:1px solid var(--paper-2);}
+  .changelog .rel:last-child{border-bottom:none;}
+  .changelog .rel b{font-family:'IBM Plex Mono',monospace;color:var(--trail-dark);margin-right:6px;}
+  .changelog .rel small{color:var(--ink-soft);}
   .badge{display:inline-block;background:var(--trail);color:var(--white);font-size:11px;font-weight:600;
     padding:4px 10px;border-radius:20px;margin-top:8px;}
 
@@ -176,7 +184,8 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>เส้นทางประหยัดเวลา</h1>
+    <h1>เส้นทางประหยัดเวลา <button type="button" class="ver-tag" id="verTag" aria-expanded="false"></button></h1>
+    <div class="changelog" id="changelog" hidden></div>
     <p>คำนวณเวลาเดินทางจริงและจัดลำดับให้ไปได้มากที่สุดในเวลา/งบที่มี — ใช้แผนที่และเส้นทางจาก OpenStreetMap/OSRM ทั้งหมด</p>
     <span class="badge">ฟรี 100% · ไม่ต้องมี API key · ไม่ต้องมีบัตรเครดิต</span>
   </header>
@@ -349,6 +358,24 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
+// ---------- Version ----------
+// Bump APP_VERSION and add a line at the top of RELEASES on every release.
+const APP_VERSION = '1.11';
+const RELEASES = [
+  ['1.11', '9 พ.ย. 2569', 'เลขเวอร์ชันและประวัติการอัปเดต'],
+  ['1.10', '9 พ.ย. 2569', 'รวมข้อความ 2 บรรทัดที่คัดลอกจาก Google เป็นที่เดียว · ค้นจากชื่อแยกจากที่อยู่ · ใช้จุดกลางตำบลเมื่อหาไม่เจอ'],
+  ['1.9',  '9 พ.ย. 2569', 'วางข้อความจากช่องค้นหา Google Maps ได้ทั้งบรรทัด · ปุ่ม 📋 วาง'],
+  ['1.8',  '9 พ.ย. 2569', 'เปลี่ยนช่องเลือกทั้งหมดเป็นปุ่มในแอป'],
+  ['1.7',  '9 พ.ย. 2569', 'ปุ่มเลือกลำดับการไปใช้ฟอนต์ของแอป · กล่องสรุป 2×2 บนมือถือ'],
+  ['1.6',  '9 พ.ย. 2569', 'เลือกลำดับ: เร็วที่สุด / ไกลสุดก่อน / ใกล้สุดก่อน · วนกลับจุดเริ่มต้นเป็นค่าเริ่มต้น'],
+  ['1.5',  '8 พ.ย. 2569', 'ใส่พิกัดหรือ Plus Code ต่อท้ายชื่อสถานที่ได้'],
+  ['1.4',  '8 พ.ย. 2569', 'ปักหมุดเองบนแผนที่/ดาวเทียม เมื่อค้นหาไม่เจอ'],
+  ['1.3',  '8 พ.ย. 2569', 'หาชื่อที่สะกดไม่ตรงใกล้จุดเริ่มต้น · ปุ่มคำนวณติดล่างจอ'],
+  ['1.2',  '8 พ.ย. 2569', 'วางรายชื่อสถานที่ทีเดียวหลายที่'],
+  ['1.1',  '8 พ.ย. 2569', 'ไอคอนแอป · เพิ่มไปหน้าจอหลักได้'],
+  ['1.0',  '8 พ.ย. 2569', 'เปิดตัว: วางแผน 1 วัน พร้อมเวลาเปิด-ปิดสถานที่'],
+];
+
 let map = null, markerLayer = null;
 let stopCount = 0;
 const DAY_COLORS = ['#C1732E','#2F6F62','#7A5DC7','#B03A5B','#3D7EA6'];
@@ -712,6 +739,15 @@ document.getElementById('formSection').addEventListener('input', () => { saveToS
 document.getElementById('formSection').addEventListener('change', () => { saveToStorageDebounced(); });
 
 document.addEventListener('DOMContentLoaded', function(){
+  document.getElementById('verTag').textContent = 'v' + APP_VERSION;
+  document.getElementById('verFoot').textContent = 'เส้นทางประหยัดเวลา v' + APP_VERSION;
+  document.getElementById('changelog').innerHTML = '<div style="font-weight:600;margin-bottom:4px;">มีอะไรใหม่</div>' +
+    RELEASES.map(r => `<div class="rel"><b>v${r[0]}</b><small>${r[1]}</small><br>${r[2]}</div>`).join('');
+  document.getElementById('verTag').addEventListener('click', e => {
+    const box = document.getElementById('changelog');
+    box.hidden = !box.hidden;
+    e.currentTarget.setAttribute('aria-expanded', String(!box.hidden));
+  });
   enhanceAllSelects();
   initMap();
 
@@ -1659,6 +1695,6 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
   document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
 }
 </script>
-<div style="text-align:center;font-size:11px;color:var(--ink-soft);padding:8px 0 90px;">เวอร์ชัน 2026-11-09b</div>
+<div id="verFoot" style="text-align:center;font-size:11px;color:var(--ink-soft);padding:8px 0 90px;"></div>
 </body>
 </html>
