@@ -111,6 +111,8 @@
   .suggestbox{margin:8px 0 8px -34px;padding:10px 14px;background:var(--paper-2);border-left:3px solid var(--trail);
     border-radius:0 10px 10px 0;font-size:12px;color:var(--ink);}
   .suggestbox b{color:var(--trail-dark);}
+  .calc-bar{position:sticky;bottom:0;z-index:30;padding:12px 0 calc(12px + env(safe-area-inset-bottom));
+    background:linear-gradient(to bottom, rgba(243,239,228,0), var(--paper) 35%);}
   .routebtns{display:flex;flex-direction:column;gap:8px;margin:14px 0 18px;}
   .routebtn{display:block;text-align:center;padding:14px;border-radius:12px;background:var(--trail-dark);color:var(--white);
     font-family:'Kanit',sans-serif;font-weight:600;font-size:15px;text-decoration:none;}
@@ -254,7 +256,7 @@
     <button class="link-btn" id="shareBtn">🔗 คัดลอกลิงก์แชร์ทริปนี้</button>
   </div>
 
-  <button class="calc-btn" id="calcBtn" disabled>คำนวณเส้นทาง</button>
+  <div class="calc-bar"><button class="calc-btn" id="calcBtn" disabled>🧭 คำนวณเส้นทาง — ไปที่ไหนก่อนดี</button></div>
   <div class="saved-note" id="savedNote"></div>
 
   <div id="errorBox"></div>
@@ -324,9 +326,38 @@ async function searchPlaces(q, limit){
       const near = await (await fetch(base + vb + '&bounded=1')).json();
       if(near.length) return near;
     }catch(e){}
+    // Not found by exact words: look for similar names nearby, ignoring Thai tone marks.
+    const fuzzy = await fuzzySearchNearby(q, lat, lng, limit);
+    if(fuzzy.length) return fuzzy;
     return await (await fetch(base + vb)).json();
   }
   return await (await fetch(base)).json();
+}
+
+const THAI_MARKS = /[็-๎]/g;   // ็ ่ ้ ๊ ๋ ์ ํ ๎
+function normThai(t){ return t.replace(THAI_MARKS, '').replace(/\s+/g, '').toLowerCase(); }
+function fuzzyNameRegex(q){
+  const chars = Array.from(normThai(q));
+  if(chars.length < 2) return null;
+  return chars.map(c => c.replace(/[.*+?^${}()|[\]\\"]/g, '\\\\$&')).join('[็-๎\\\\s]*');
+}
+async function fuzzySearchNearby(q, lat, lng, limit){
+  const rx = fuzzyNameRegex(q);
+  if(!rx) return [];
+  const query = `[out:json][timeout:20];nwr["name"~"${rx}",i](around:80000,${lat},${lng});out center 30;`;
+  try{
+    const res = await fetch('https://overpass-api.de/api/interpreter', {method:'POST', body:'data=' + encodeURIComponent(query)});
+    const data = await res.json();
+    const want = normThai(q);
+    return (data.elements || []).map(el => {
+      const elat = el.lat ?? (el.center && el.center.lat), elon = el.lon ?? (el.center && el.center.lon);
+      const name = el.tags['name:th'] || el.tags.name;
+      const area = [el.tags['addr:subdistrict'], el.tags['addr:district'], el.tags['addr:province']].filter(Boolean).join(', ');
+      const exact = normThai(el.tags.name || '') === want ? 0 : 1;
+      return {lat:elat, lon:elon, name, namedetails:{name}, display_name: name + (area ? ', ' + area : ', ใกล้จุดเริ่มต้น'),
+        _rank: exact*1e7 + haversine(lat, lng, elat, elon)};
+    }).filter(d => d.lat != null).sort((a,b) => a._rank - b._rank).slice(0, limit);
+  }catch(e){ return []; }
 }
 
 function attachPlaceSearch(input){
@@ -629,6 +660,8 @@ document.getElementById('bulkBtn').addEventListener('click', async () => {
     }
     document.getElementById('bulkInput').value = '';
     checkCanCalc(); saveToStorage();
+    status.insertAdjacentHTML('beforeend', `<button class="calc-btn" id="bulkCalcBtn" style="margin-top:12px;">🧭 คำนวณเส้นทางเลย</button>`);
+    document.getElementById('bulkCalcBtn').addEventListener('click', () => document.getElementById('calcBtn').click());
   } finally {
     btn.disabled = false;
     btn.textContent = 'ค้นหาและเพิ่มทั้งหมด';
@@ -967,12 +1000,16 @@ async function runOptimization(){
     const findHotels = document.getElementById('findHotels').checked;
 
     const startPoint = await geocodeIfNeeded(startInput);
+    startInput.dataset.lat = startPoint.lat; startInput.dataset.lng = startPoint.lng;
     const stopData = [];
+    const skipped = [];
     for(const el of stopEls){
       const id = el.id.match(/stop-(\d+)/)[1];
       const nameInput = document.getElementById('stopname-' + id);
       if(!nameInput.value.trim()) continue;
-      const pt = await geocodeIfNeeded(nameInput);
+      let pt;
+      try{ pt = await geocodeIfNeeded(nameInput); }
+      catch(e){ skipped.push(nameInput.value.trim()); el.classList.add('notfound'); continue; }
       stopData.push({
         ...pt,
         durationSec: (parseFloat(document.getElementById('stopdur-' + id).value)||0) * 60,
@@ -982,7 +1019,8 @@ async function runOptimization(){
         closeSec: timeToSec(document.getElementById('stopclose-' + id).value) ?? 48*3600
       });
     }
-    if(stopData.length === 0) throw new Error('กรุณาเพิ่มอย่างน้อย 1 จุดที่ต้องไป');
+    if(stopData.length === 0) throw new Error(skipped.length ? 'หาตำแหน่งสถานที่ไม่เจอเลย: ' + skipped.join(', ') : 'กรุณาเพิ่มอย่างน้อย 1 จุดที่ต้องไป');
+    window._skippedPlaces = skipped;
     if(stopData.length > 40) throw new Error('จุดเยอะเกินไปสำหรับเซิร์ฟเวอร์ OSRM สาธารณะ (แนะนำไม่เกิน 40 จุด)');
 
     const allPoints = [{...startPoint, durationSec:0, priority:99, costBaht:0, openSec:0, closeSec:48*3600}, ...stopData];
@@ -1045,7 +1083,7 @@ async function runOptimization(){
     document.getElementById('errorBox').innerHTML = `<div class="error-box">${err.message}</div>`;
   } finally {
     document.getElementById('calcBtn').disabled = false;
-    document.getElementById('calcBtn').textContent = 'คำนวณเส้นทาง';
+    document.getElementById('calcBtn').textContent = '🧭 คำนวณเส้นทาง — ไปที่ไหนก่อนดี';
   }
 }
 
@@ -1201,7 +1239,9 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
       ? ` <span style="color:var(--cut);font-weight:600;">— เกินงบ ${budgetInfo.moneyBudget.toLocaleString()} บาท</span>`
       : ` (งบที่ตั้งไว้ ${budgetInfo.moneyBudget.toLocaleString()} บาท)`;
   }
-  document.getElementById('tripBody').innerHTML = `<div class="tripsummary">${budgetLine}</div>` + bodyHtml;
+  const sk = window._skippedPlaces || [];
+  const skHtml = sk.length ? `<div class="error-box" style="margin-top:12px;">ไม่ได้รวมในเส้นทาง เพราะหาตำแหน่งไม่เจอ: <b>${sk.join(', ')}</b> — แก้ชื่อในช่องกรอบแดงแล้วกดคำนวณใหม่</div>` : '';
+  document.getElementById('tripBody').innerHTML = skHtml + `<div class="tripsummary">${budgetLine}</div>` + bodyHtml;
 
   if(map && bounds.length) map.fitBounds(bounds, {padding:[30,30]});
   document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
