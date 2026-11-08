@@ -153,6 +153,7 @@
     color:var(--ink);font-size:16px;font-family:inherit;line-height:1.6;resize:vertical;}
   textarea:focus{outline:2px solid var(--trail);outline-offset:1px;}
   .bulk-status{font-size:13px;line-height:1.7;margin-top:8px;}
+  .bulk-status .warn-txt{color:var(--route);font-weight:600;}
   .bulk-status .ok{color:var(--trail-dark);} .bulk-status .bad{color:var(--cut);font-weight:600;}
   .stop.notfound{border-color:var(--cut);background:#F8ECE8;}
   .pin-btn{background:none;border:1px solid var(--line);border-radius:10px;font-size:18px;cursor:pointer;padding:0 10px;flex-shrink:0;}
@@ -789,6 +790,22 @@ function olcRecover(code, refLat, refLng){
 }
 const PLUS_RE = /([23456789CFGHJMPQRVWX]{2,8}\+[23456789CFGHJMPQRVWX]{0,3})/i;
 const COORD_RE = /(-?\d{1,2}\.\d{3,})\s*[,，\s]\s*(-?\d{1,3}\.\d{3,})/;
+// Thai address words: "ตำบล X อำเภอ Y" / "ต.X อ.Y" / "แขวง/เขต"
+const ADDR_RE = /(^|[\s,])(ตำบล|อำเภอ|จังหวัด|แขวง|เขต|หมู่(ที่)?\s*\d|ม\.\s*\d|(ต|อ|จ)\.)/;
+// "วัดถ้ำเมืองออน ตำบล บ้านสหกรณ์ อำเภอ แม่ออน" -> {name:"วัดถ้ำเมืองออน", addr:"ตำบล ..."}
+function splitNameAddress(text){
+  const m = text.match(ADDR_RE);
+  if(!m) return {name: text.trim(), addr: ''};
+  const i = m.index + m[1].length;
+  return {name: text.slice(0, i).replace(/[\s,(]+$/,'').trim(), addr: text.slice(i).trim()};
+}
+// Address -> search query parts, most specific first: ["บ้านสหกรณ์","แม่ออน","เชียงใหม่"]
+function addressParts(addr){
+  return addr.replace(/\b\d{5}\b/g, '').replace(/ประเทศไทย|Thailand/g, '')
+    .split(/ตำบล|อำเภอ|จังหวัด|แขวง|เขต|หมู่ที่\s*\d+|หมู่\s*\d+|ม\.\s*\d+|(?:^|\s)[ตอจ]\./)
+    .map(t => t.replace(/[,()]/g, ' ').replace(/\s+\d+\s*$/, '').trim()).filter(Boolean);
+}
+
 // Split one pasted line into a display name plus coordinates / plus code if present.
 function parsePlaceLine(line){
   const fromUrl = extractLatLngFromUrl(line);
@@ -805,21 +822,33 @@ function parsePlaceLine(line){
     const after = line.slice(m.index + m[0].length).replace(/^[\s,]+/,'').trim();
     // Text after the code is either an address ("ตำบล ... อำเภอ ...") or, when copied
     // from the Google Maps search bar, the place name ("V8CM+P7F วัด...").
-    const isAddress = /ตำบล|อำเภอ|จังหวัด|แขวง|เขต|(^|\s)(ต|อ|จ)\./.test(after);
-    const name = before || (isAddress ? '' : after.split(/[,(]/)[0].trim());
-    return {name, plus: m[1].toUpperCase(), locality: isAddress ? after : ''};
+    const sa = splitNameAddress(after);
+    const name = before || sa.name.split(/[,(]/)[0].trim();
+    return {name, plus: m[1].toUpperCase(), locality: sa.addr};
   }
-  return {name: line.trim()};
+  const sa = splitNameAddress(line);
+  return {name: sa.name || line.trim(), addr: sa.addr};
 }
 
 function parsePlaceList(text){
   const seen = new Set(), out = [];
+  const raw = [];
   for(let line of text.split(/\n|、/)){
     line = line.replace(/^\s*([-•*·]|\d+[.)])\s+/, '').trim();
     if(!line) continue;
+    const prev = raw[raw.length-1];
+    const pp = prev ? parsePlaceLine(prev) : null;
+    const cur = parsePlaceLine(line);
+    // Google Maps sometimes copies one place as two lines: "CODE name" + "name/address".
+    if(pp && (pp.plus || pp.lat != null) && cur.lat == null && !cur.plus && cur.addr && !pp.locality){
+      raw[raw.length-1] = prev + ' ' + line; continue;
+    }
+    raw.push(line);
+  }
+  for(const line of raw){
     const p = parsePlaceLine(line);
     // Lines with plain names may hold several places separated by commas.
-    const parts = (p.lat == null && !p.plus) ? line.split(',').map(t => t.trim()).filter(Boolean) : [line];
+    const parts = (p.lat == null && !p.plus && !p.addr) ? line.split(',').map(t => t.trim()).filter(Boolean) : [line];
     for(const part of parts) if(!seen.has(part)){ seen.add(part); out.push(part); }
   }
   return out;
@@ -843,9 +872,25 @@ async function resolvePlaceLine(line){
     if(!nm){ try{ nm = (await reverseGeocodeOSM(c.lat, c.lng)).split(',')[0]; }catch(e){} }
     return {name: nm || p.plus, lat: c.lat, lng: c.lng, how: 'Plus Code'};
   }
-  const r = await searchPlaces(p.name, 1);
-  if(!r[0]) return null;
-  return {name: shortPlaceName(r[0]), lat: +r[0].lat, lng: +r[0].lon, full: r[0].display_name, how: 'ค้นชื่อ'};
+  const tries = [p.name];
+  const bare = p.name.replace(/^(วัด|สถานปฏิบัติธรรม|อุทยานแห่งชาติ|ร้าน|บ้าน)\s*/, '');
+  if(bare && bare !== p.name && bare.length >= 3) tries.push(bare);
+  for(const q of tries){
+    const r = await searchPlaces(q, 1);
+    if(r[0]) return {name: q === p.name ? shortPlaceName(r[0]) : p.name, lat: +r[0].lat, lng: +r[0].lon, full: r[0].display_name, how: 'ค้นชื่อ'};
+    await sleep(1100);
+  }
+  // Last resort: centre of the subdistrict/district from the address (approximate).
+  const parts = p.addr ? addressParts(p.addr) : [];
+  for(let i=0; i<Math.min(parts.length, 2); i++){
+    const q = parts.slice(i).join(', ');
+    try{
+      const r = await (await fetch(`https://nominatim.openstreetmap.org/search?format=json&accept-language=th&limit=1&countrycodes=th&q=${encodeURIComponent(q)}`)).json();
+      if(r[0]) return {name: p.name, lat: +r[0].lat, lng: +r[0].lon, full: r[0].display_name, how: 'ประมาณ', approx: parts[i]};
+    }catch(e){}
+    await sleep(1100);
+  }
+  return null;
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -892,8 +937,13 @@ document.getElementById('bulkBtn').addEventListener('click', async () => {
         input.value = found.name;
         input.title = found.full || found.how;
         input.dataset.lat = found.lat; input.dataset.lng = found.lng;
-        const area = found.full ? found.full.split(',').slice(1,3).join(',').trim() : `จาก${found.how}`;
-        lines.push(`<span class="ok">✓ ${found.name}</span>${area ? ` <span style="color:var(--ink-soft)">— ${area}</span>` : ''}`);
+        if(found.approx){
+          document.getElementById('stop-' + stopCount).classList.add('notfound');
+          lines.push(`<span class="warn-txt">≈ ${found.name} — ใช้ตำแหน่งกลาง${found.approx}แทน (คลาดได้หลายกม.)</span> <button class="pin-inline" onclick="openPinPicker(${stopCount})">📍 ปักหมุดให้ตรง</button>`);
+        } else {
+          const area = found.full ? found.full.split(',').slice(1,3).join(',').trim() : `จาก${found.how}`;
+          lines.push(`<span class="ok">✓ ${found.name}</span>${area ? ` <span style="color:var(--ink-soft)">— ${area}</span>` : ''}`);
+        }
       } else {
         input.value = parsePlaceLine(name).name || name;
         document.getElementById('stop-' + stopCount).classList.add('notfound');
@@ -1609,5 +1659,6 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
   document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
 }
 </script>
+<div style="text-align:center;font-size:11px;color:var(--ink-soft);padding:8px 0 90px;">เวอร์ชัน 2026-11-09b</div>
 </body>
 </html>
