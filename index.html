@@ -362,8 +362,9 @@
 <script>
 // ---------- Version ----------
 // Bump APP_VERSION and add a line at the top of RELEASES on every release.
-const APP_VERSION = '1.13';
+const APP_VERSION = '1.14';
 const RELEASES = [
+  ['1.14', '9 พ.ย. 2569', 'กดคำนวณแล้วเพิ่มรายชื่อ/พิกัดที่ค้างในช่องให้อัตโนมัติ ไม่ต้องกดค้นหาก่อน'],
   ['1.13', '9 พ.ย. 2569', 'ช่องรายชื่อสถานที่มีรายการให้เลือกขณะพิมพ์ แตะแล้วเพิ่มเป็นจุดที่ต้องไปทันที'],
   ['1.12', '9 พ.ย. 2569', 'ตอนกดคำนวณ ใช้วิธีหาตำแหน่งแบบใหม่ด้วย (แยกชื่อกับที่อยู่, Plus Code, จุดกลางตำบล) และจำตำแหน่งที่หาเจอไว้'],
   ['1.11', '9 พ.ย. 2569', 'เลขเวอร์ชันและประวัติการอัปเดต'],
@@ -549,7 +550,7 @@ function attachPlaceSearch(input){
       });
     }catch(e){ dropdown.style.display = 'none'; }
   }, 500);
-  input.addEventListener('input', () => { delete input.dataset.lat; delete input.dataset.lng; doSearch(); });
+  input.addEventListener('input', () => { delete input.dataset.lat; delete input.dataset.lng; doSearch(); checkCanCalc(); });
   input.addEventListener('blur', () => setTimeout(() => dropdown.style.display = 'none', 200));
 }
 
@@ -811,6 +812,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
   attachPlaceSearch(document.getElementById('startInput'));
   attachListSearch(document.getElementById('bulkInput'));
+  document.getElementById('bulkInput').addEventListener('input', checkCanCalc);
   document.getElementById('startInput').addEventListener('input', checkCanCalc);
 
   if(importedTrip){
@@ -834,11 +836,21 @@ document.addEventListener('DOMContentLoaded', function(){
 function checkCanCalc(){
   const start = document.getElementById('startInput');
   const hasStart = start && start.value.trim().length > 0;
-  const stopEls = document.querySelectorAll('#stopsList .stop');
-  document.getElementById('calcBtn').disabled = !(hasStart && stopEls.length >= 1);
+  const hasStop = Array.from(document.querySelectorAll('#stopsList input[id^="stopname-"]')).some(i => i.value.trim())
+    || document.getElementById('bulkInput').value.trim().length > 0;
+  document.getElementById('calcBtn').disabled = !(hasStart && hasStop);
 }
 
-document.getElementById('calcBtn').addEventListener('click', () => { saveToStorage(); runOptimization(); });
+document.getElementById('calcBtn').addEventListener('click', async () => {
+  const calc = document.getElementById('calcBtn');
+  if(document.getElementById('bulkInput').value.trim()){
+    calc.disabled = true;
+    calc.textContent = 'กำลังเพิ่มสถานที่จากรายชื่อ...';
+    try{ await bulkAddFromBox(true); }
+    finally{ calc.disabled = false; calc.textContent = '🧭 คำนวณเส้นทาง — ไปที่ไหนก่อนดี'; }
+  }
+  saveToStorage(); runOptimization();
+});
 
 // ---------- Coordinates & Plus Codes (Open Location Code) ----------
 const OLC_ALPHA = '23456789CFGHJMPQRVWX';
@@ -1002,7 +1014,7 @@ document.getElementById('pasteBtn').addEventListener('click', async () => {
   }
 });
 
-document.getElementById('bulkBtn').addEventListener('click', async () => {
+async function bulkAddFromBox(fromCalc){
   const btn = document.getElementById('bulkBtn');
   const status = document.getElementById('bulkStatus');
   const names = parsePlaceList(document.getElementById('bulkInput').value);
@@ -1049,13 +1061,16 @@ document.getElementById('bulkBtn').addEventListener('click', async () => {
     }
     document.getElementById('bulkInput').value = '';
     checkCanCalc(); saveToStorage();
-    status.insertAdjacentHTML('beforeend', `<button class="calc-btn" id="bulkCalcBtn" style="margin-top:12px;">🧭 คำนวณเส้นทางเลย</button>`);
-    document.getElementById('bulkCalcBtn').addEventListener('click', () => document.getElementById('calcBtn').click());
+    if(!fromCalc){
+      status.insertAdjacentHTML('beforeend', `<button class="calc-btn" id="bulkCalcBtn" style="margin-top:12px;">🧭 คำนวณเส้นทางเลย</button>`);
+      document.getElementById('bulkCalcBtn').addEventListener('click', () => document.getElementById('calcBtn').click());
+    }
   } finally {
     btn.disabled = false;
     btn.textContent = 'ค้นหาและเพิ่มทั้งหมด';
   }
-});
+}
+document.getElementById('bulkBtn').addEventListener('click', () => bulkAddFromBox(false));
 
 // ---------- Manual pin picker ----------
 let pinMap = null, pinMarker = null, pinTargetId = null, pinLatLng = null;
@@ -1513,7 +1528,7 @@ async function runOptimization(){
         closeSec: timeToSec(document.getElementById('stopclose-' + id).value) ?? 48*3600
       });
     }
-    if(stopData.length === 0) throw new Error(skipped.length ? 'หาตำแหน่งสถานที่ไม่เจอเลย: ' + skipped.join(', ') : 'กรุณาเพิ่มอย่างน้อย 1 จุดที่ต้องไป');
+    if(stopData.length === 0) throw new Error(skipped.length ? 'หาตำแหน่งสถานที่ไม่เจอเลย: ' + skipped.join(', ') : 'ยังไม่มีจุดที่ต้องไป — พิมพ์ชื่อสถานที่หรือวางพิกัดในช่อง "จุดที่ต้องไป" อย่างน้อย 1 ที่');
     window._skippedPlaces = skipped;
     saveToStorage();
     document.getElementById('calcBtn').textContent = 'กำลังคำนวณเส้นทาง...';
