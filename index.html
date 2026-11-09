@@ -186,6 +186,12 @@
   .tp-bar span{display:block;height:100%;background:var(--trail);border-radius:6px;transition:width .3s;}
   .tp-links{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;margin-top:6px;}
   .tp-reset{border:none;background:none;color:var(--ink-soft);text-decoration:underline;font-family:inherit;font-size:12px;cursor:pointer;padding:4px 0;}
+  .leg{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;margin:2px 0 16px -2px;padding:6px 12px;
+    background:var(--white);border:1px dashed var(--line);border-radius:20px;width:fit-content;max-width:100%;
+    font-size:13px;color:var(--ink-soft);}
+  .leg b{font-family:'Kanit',sans-serif;font-weight:600;color:var(--trail-dark);font-size:14px;}
+  .leg .leg-km{color:var(--ink-soft);font-size:12px;}
+  .leg .leg-km:empty{display:none;}
   .leg-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-top:6px;}
   .leg-actions .navlink{margin-top:0;}
   .done-btn{border:1.5px solid var(--trail);background:var(--white);color:var(--trail-dark);border-radius:20px;
@@ -420,8 +426,9 @@
 <script>
 // ---------- Version ----------
 // Bump APP_VERSION and add a line at the top of RELEASES on every release.
-const APP_VERSION = '1.19';
+const APP_VERSION = '1.20';
 const RELEASES = [
+  ['1.20', '9 พ.ย. 2569', 'แถบบอกเวลาขับระหว่างแต่ละจุด เช่น จุด 1 → 2 · 1 ชม. 44 นาที · 82 กม. รวมขากลับบ้าน'],
   ['1.19', '9 พ.ย. 2569', 'แจ้งเตือนเมื่อมีเวอร์ชันใหม่ กด "อัปเดตเลย" ได้ในแอป ไม่ต้องปิดเปิดใหม่'],
   ['1.18', '9 พ.ย. 2569', 'แก้: วางพิกัดในช่องจุดเริ่มต้น/สถานที่ แล้วถูกแทนด้วยสถานที่อื่นที่ค้นเจอ ตอนนี้ใช้พิกัดตรงๆ'],
   ['1.17', '9 พ.ย. 2569', 'หน้าสั้นลง: รวมการนำเข้าลิงก์ Google Maps ไว้ในช่องสถานที่ · พับคำอธิบายยาว · ย่อหัวแอป'],
@@ -1522,6 +1529,14 @@ async function getRainChance(lat, lng, dateObj){
 }
 
 function fmtMin(sec){ return Math.round(sec/60); }
+function fmtDur(sec){
+  const m = Math.max(1, Math.round(sec/60));
+  return m < 60 ? `${m} นาที` : `${Math.floor(m/60)} ชม.${m%60 ? ' ' + (m%60) + ' นาที' : ''}`;
+}
+function legHtml(fromLabel, toLabel, sec, meters){
+  const km = meters ? ` · ${meters < 1000 ? Math.round(meters) + ' ม.' : (Math.round(meters/100)/10) + ' กม.'}` : '';
+  return `<div class="leg"><span class="leg-ico">🚗</span><span>จุด ${fromLabel} → ${toLabel}</span><b>${fmtDur(sec)}</b><span class="leg-km">${km.replace(' · ','')}</span></div>`;
+}
 function fmtKm(m){ return Math.round(m/100)/10; }
 
 // ---------- One-day planner (time windows) ----------
@@ -1895,6 +1910,7 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
 
   let totalTravelSec = 0, totalDistM = 0, totalVisitSec = 0, globalMarkerNum = 1;
   const tripSeq = [];
+  let prevMarkerLabel = '1';
   let bodyHtml = '';
   const bounds = [];
 
@@ -1954,6 +1970,7 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
       cum = new Date(cum.getTime() + (isBoundaryRepeat ? 0 : visitSec[globalIdx]*1000));
 
       const markerLabel = isBoundaryRepeat ? '⌂' : String(globalMarkerNum);
+      if(pos === 0) prevMarkerLabel = markerLabel;
       if(!isBoundaryRepeat) globalMarkerNum++;
 
       if(map && markerLayer){
@@ -1984,6 +2001,13 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
         metaText += ` · ออก ${fmtClock(sch.depart)}`;
       } else metaText = `เดินทาง ${fmtMin(mat[dayOrder[pos-1]][globalIdx])} นาที · ถึงประมาณ ${cum.getHours()}:${String(cum.getMinutes()).padStart(2,'0')}`;
 
+      if(pos > 0 && !isBoundaryRepeat){
+        const fromIdx = dayOrder[pos-1];
+        bodyHtml += legHtml(prevMarkerLabel, 'จุด ' + markerLabel, mat[fromIdx][globalIdx], distMat[fromIdx][globalIdx]);
+      }
+      // the leg bar above already says how long the drive is
+      metaText = metaText.replace(/เดินทาง \d+ นาที · /, '');
+      prevMarkerLabel = markerLabel;
       bodyHtml += `<div class="stopitem"${seqAttr}>
         <div class="marker">${markerLabel}</div>
         <div class="name">${p.label}</div>
@@ -1996,6 +2020,11 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
     if(returningToday && dayOrder.length > 1){
       const home = allPoints[days[0][0]];
       tripSeq.push({lat:home.lat, lng:home.lng, name:'กลับจุดเริ่มต้น', num:'🏠', home:true});
+    }
+    if(returningToday && dayOrder.length > 1){
+      const lastIdx = dayOrder[dayOrder.length-1], homeIdx = days[0][0];
+      bodyHtml += `<div class="trail-list" style="margin-top:0;">` +
+        legHtml(prevMarkerLabel, '🏠 จุดเริ่มต้น', mat[lastIdx][homeIdx], distMat[lastIdx][homeIdx]) + `</div>`;
     }
     if(returningToday && budgetInfo.finishSec != null && dayOrder.length > 1){
       bodyHtml += `<div class="tripsummary" style="text-align:left;margin:14px 0 0;">🏠 กลับถึงจุดเริ่มต้นประมาณ ${fmtClock(budgetInfo.finishSec)}</div>`;
