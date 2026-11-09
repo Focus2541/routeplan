@@ -267,7 +267,7 @@
     <summary><span class="ico">📁</span> ทริปที่บันทึกไว้ <span class="saved-count" id="savedCount"></span></summary>
     <div class="card-body">
       <div id="savedList"></div>
-      <div class="hint" style="margin-top:10px;">เก็บไว้ในเครื่องนี้ ใช้เครื่องอื่นให้กด "แชร์" แล้วเปิดลิงก์ในเครื่องนั้น</div>
+      <div class="hint" style="margin-top:10px;">เก็บไว้ในเบราว์เซอร์นี้เท่านั้น (Chrome กับ Edge แยกกัน) ใช้เครื่องหรือเบราว์เซอร์อื่น ให้กด "แชร์" แล้วเปิดลิงก์ที่นั่น</div>
     </div>
   </details>
 
@@ -452,8 +452,9 @@
 <script>
 // ---------- Version ----------
 // Bump APP_VERSION and add a line at the top of RELEASES on every release.
-const APP_VERSION = '1.24';
+const APP_VERSION = '1.25';
 const RELEASES = [
+  ['1.25', '9 พ.ย. 2569', 'แก้: เปิดลิงก์แชร์ที่มีข้อความแชทติดท้ายแล้วได้หน้าเปล่า ตอนนี้อ่านได้ และบอกชัดถ้าลิงก์เสีย'],
   ['1.24', '9 พ.ย. 2569', 'แก้: ข้อความแชร์ตัดพิกัดจุดเริ่มต้นครึ่งเดียว ("เริ่มจาก 19.149982")'],
   ['1.23', '9 พ.ย. 2569', 'เลิกใช้ลิงก์ย่อ is.gd (ลิงก์ที่ได้เปิดไม่ได้) กลับมาใช้ลิงก์ของแอปที่สั้นลงครึ่งหนึ่ง'],
   ['1.22', '9 พ.ย. 2569', 'ลิงก์แชร์สั้นลงครึ่งหนึ่ง: เก็บเฉพาะข้อมูลที่จำเป็น'],
@@ -566,12 +567,30 @@ async function decodeTrip(code){
   const obj = JSON.parse(new TextDecoder().decode(bytes));
   return Array.isArray(obj) && obj[0] === 2 ? expandTrip(obj) : obj;    // older links held the full object
 }
+// Returns a trip, null (no link), or {broken:true}. Chat apps sometimes glue the next words onto the
+// link ("...y67hcเอาแบบเดิมก็ได้" or "...tri"), so cut anything that isn't link data and, if needed,
+// try dropping a few trailing characters.
 async function readTripFromHash(){
-  const h = location.hash;
-  try{
-    if(h.indexOf('#t=') === 0) return await decodeTrip(decodeURIComponent(h.slice(3)));
-    if(h.indexOf('#trip=') === 0) return JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(h.slice(6))))));
-  }catch(e){}
+  let h = location.hash;
+  try{ h = decodeURIComponent(h); }catch(e){}
+  if(h.indexOf('#t=') === 0){
+    const m = h.slice(3).match(/^[zpc]\.[A-Za-z0-9_-]+/);
+    if(!m) return {broken:true};
+    for(let cut = 0; cut <= 12 && m[0].length - cut > 4; cut++){
+      try{
+        const t = await decodeTrip(m[0].slice(0, m[0].length - cut));
+        if(t && (t.start || t.stops)) return t;
+      }catch(e){}
+    }
+    return {broken:true};
+  }
+  if(h.indexOf('#trip=') === 0){
+    const m = h.slice(6).match(/^[A-Za-z0-9+/=%]+/);
+    for(let cut = 0; m && cut <= 12; cut++){
+      try{ return JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(m[0].slice(0, m[0].length - cut)))))); }catch(e){}
+    }
+    return {broken:true};
+  }
   return null;
 }
 
@@ -986,7 +1005,7 @@ document.getElementById('shareModal').addEventListener('click', e => { if(e.targ
 document.getElementById('shareLine').addEventListener('click', () => setTimeout(closeShareSheet, 300));
 document.getElementById('shareMessenger').addEventListener('click', () => setTimeout(closeShareSheet, 300));
 document.getElementById('shareCopy').addEventListener('click', async () => {
-  const all = shareData.text + '\n' + shareData.url;
+  const all = shareData.text + '\n' + shareData.url + '\n';
   try{ await navigator.clipboard.writeText(all); closeShareSheet(); flashSavedNote('คัดลอกข้อความและลิงก์แล้ว นำไปวางในแชทได้เลย'); }
   catch(e){ window.prompt('คัดลอกลิงก์นี้ไปแชร์:', shareData.url); }
 });
@@ -1074,7 +1093,7 @@ document.getElementById('formSection').addEventListener('input', () => { saveToS
 document.getElementById('formSection').addEventListener('change', () => { saveToStorageDebounced(); });
 
 document.addEventListener('DOMContentLoaded', async function(){
-  const importedTrip = await readTripFromHash();
+  let importedTrip = await readTripFromHash();
   document.getElementById('verTag').textContent = 'v' + APP_VERSION;
   document.getElementById('verFoot').textContent = 'เส้นทางประหยัดเวลา v' + APP_VERSION;
   document.getElementById('changelog').innerHTML = '<div style="font-weight:600;margin-bottom:4px;">มีอะไรใหม่</div>' +
@@ -1112,6 +1131,8 @@ document.addEventListener('DOMContentLoaded', async function(){
   document.getElementById('startInput').addEventListener('input', checkCanCalc);
 
   renderSavedTrips();
+  let brokenLink = false;
+  if(importedTrip && importedTrip.broken){ brokenLink = true; importedTrip = null; history.replaceState(null, '', location.pathname); }
   if(importedTrip){
     applyTrip(importedTrip);
     saveToStorage();
@@ -1128,6 +1149,10 @@ document.addEventListener('DOMContentLoaded', async function(){
       document.getElementById('startDateTime').value = now.toISOString().slice(0,16);
       addStopRow(); addStopRow();
     }
+  }
+  if(brokenLink){
+    document.querySelector('header').insertAdjacentHTML('beforeend',
+      '<div class="error-box" id="brokenLinkBox">เปิดทริปจากลิงก์นี้ไม่ได้ — ลิงก์อาจถูกตัดหรือมีข้อความอื่นติดมา ให้คนที่ส่งมากด "📤 แชร์" แล้วส่งลิงก์ใหม่อีกครั้ง</div>');
   }
   syncTripTypeFields();
   checkCanCalc();
