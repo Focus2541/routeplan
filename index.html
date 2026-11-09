@@ -160,6 +160,14 @@
   .si-btn.danger{color:var(--cut);}
   .si-btn.confirm{background:var(--cut);border-color:var(--cut);color:var(--white);}
   .saved-empty{font-size:13px;color:var(--ink-soft);padding:6px 0;}
+  .howto{margin-top:6px;}
+  .howto summary{cursor:pointer;font-size:13px;color:var(--trail-dark);font-weight:600;padding:6px 0;list-style:none;}
+  .howto summary::-webkit-details-marker{display:none;}
+  .howto summary::after{content:' ▾';color:var(--trail);}
+  .howto[open] summary::after{content:' ▴';}
+  .howto-body{font-size:12.5px;color:var(--ink-soft);line-height:1.65;background:var(--paper);border-radius:10px;padding:10px 12px;}
+  .howto-body p{margin:0 0 6px;} .howto-body p:last-child{margin:0;}
+  .howto-body code{font-family:'IBM Plex Mono',monospace;font-size:12px;background:var(--white);padding:1px 5px;border-radius:5px;color:var(--ink);}
   .trip-panel{position:sticky;top:0;z-index:25;margin-top:14px;padding:14px 16px;background:var(--white);
     border:2px solid var(--trail-dark);border-radius:14px;box-shadow:0 4px 14px rgba(34,48,31,.12);}
   .trip-panel .routebtn{margin:10px 0 4px;}
@@ -219,30 +227,14 @@
   <header>
     <h1>เส้นทางประหยัดเวลา <button type="button" class="ver-tag" id="verTag" aria-expanded="false"></button></h1>
     <div class="changelog" id="changelog" hidden></div>
-    <p>คำนวณเวลาเดินทางจริงและจัดลำดับให้ไปได้มากที่สุดในเวลา/งบที่มี — ใช้แผนที่และเส้นทางจาก OpenStreetMap/OSRM ทั้งหมด</p>
-    <span class="badge">ฟรี 100% · ไม่ต้องมี API key · ไม่ต้องมีบัตรเครดิต</span>
+    <p>ใส่สถานที่ที่อยากไป แล้วให้แอปบอกว่าควรไปที่ไหนก่อน</p>
   </header>
 
   <details class="card" id="savedCard">
     <summary><span class="ico">📁</span> ทริปที่บันทึกไว้ <span class="saved-count" id="savedCount"></span></summary>
     <div class="card-body">
       <div id="savedList"></div>
-      <div class="hint" style="margin-top:10px;">บันทึกไว้ในเครื่องนี้ (ไม่ต้องสมัครสมาชิก) ตำแหน่งที่หาเจอแล้วถูกเก็บไปด้วย เปิดกลับมาไม่ต้องค้นหาซ้ำ ถ้าจะใช้ในเครื่องอื่น ให้กด "แชร์" แล้วเปิดลิงก์ในเครื่องนั้น</div>
-    </div>
-  </details>
-
-  <details class="card">
-    <summary><span class="ico">🔗</span> นำเข้าจุดจากลิงก์ Google Maps</summary>
-    <div class="card-body">
-      <div class="two-col field">
-        <input type="text" id="shareLinkInput" placeholder="วางลิงก์สั้น เช่น share.google/...">
-        <button class="calc-btn smallbtn" id="openLinkBtn" style="flex:0 0 auto;">เปิดลิงก์</button>
-      </div>
-      <div class="hint" style="margin-bottom:10px;">ลิงก์แบบย่อดึงพิกัดตรงๆ ไม่ได้ — กด "เปิดลิงก์" แล้วคัดลอก URL เต็มจาก address bar (มี @lat,lng อยู่ในนั้น) มาแปะช่องล่าง<br><b>บนมือถือ:</b> ถ้าลิงก์เด้งเข้าแอป Google Maps แทนเบราว์เซอร์ (ไม่มี address bar ให้คัดลอก) ให้เปิดแอป Chrome แยกต่างหาก วางลิงก์ในช่อง address bar เอง แทนการแตะลิงก์ตรงๆ — หรือจะข้ามขั้นตอนนี้ไปเลย พิมพ์ชื่อสถานที่ในช่อง "จุดที่ต้องไป" ด้านล่างแทนก็ได้ ระบบค้นหาให้อัตโนมัติอยู่แล้ว</div>
-      <div class="two-col field" style="margin-bottom:0;">
-        <input type="text" id="fullUrlInput" placeholder="วาง URL เต็มที่ได้จากขั้นตอนบน">
-        <button class="calc-btn smallbtn" id="extractBtn" style="flex:0 0 auto;">ดึงพิกัด → เพิ่มจุด</button>
-      </div>
+      <div class="hint" style="margin-top:10px;">เก็บไว้ในเครื่องนี้ ใช้เครื่องอื่นให้กด "แชร์" แล้วเปิดลิงก์ในเครื่องนั้น</div>
     </div>
   </details>
 
@@ -316,13 +308,20 @@
     <div class="card">
       <div class="card-title"><span class="ico">🚩</span> จุดที่ต้องไป</div>
       <div class="field">
-        <label class="label" for="bulkInput">📝 วางรายชื่อสถานที่ (บรรทัดละ 1 ที่) — ไม่ต้องเรียงลำดับ</label>
+        <label class="label" for="bulkInput">📝 สถานที่ที่อยากไป — พิมพ์หรือวาง บรรทัดละ 1 ที่ ไม่ต้องเรียง</label>
         <div style="position:relative;" id="bulkWrap">
           <textarea id="bulkInput" rows="4" autocomplete="off" placeholder="พิมพ์ชื่อสถานที่ แล้วเลือกจากรายการ&#10;หรือวางหลายที่ บรรทัดละ 1 ที่ เช่น&#10;วัดป่าแดด&#10;วัดช่อแล 18.8312, 98.9455&#10;วัดแม่อ่อน QX5V+2M"></textarea>
         </div>
-        <div class="hint">ใส่แค่ชื่อก็ได้ ระบบหาที่ที่ใกล้จุดเริ่มต้นให้ ถ้าที่ไหนหาไม่เจอ ใส่พิกัดหรือ Plus Code ต่อท้ายชื่อได้<br>
-        <b>เอาตำแหน่งจาก Google Maps (ง่ายสุด):</b> เปิดสถานที่ แตะที่<b>ช่องค้นหาด้านบน</b> ที่ขึ้นรหัสแบบ <b>V8CM+P7F ชื่อสถานที่</b> → กดค้าง → เลือกทั้งหมด → คัดลอก แล้วกด 📋 วาง ได้ทั้งบรรทัด<br>
-        หรือแตะบรรทัดที่อยู่ในหน้าข้อมูลสถานที่ (Google จะคัดลอกให้) ส่วนการกดค้างบนแผนที่ ให้กดค้างที่<b>ข้างๆ หมุด</b> ไม่ใช่บนหมุด</div>
+        <details class="howto">
+          <summary>ℹ️ หาไม่เจอ? ใส่พิกัด / Plus Code / ลิงก์ Google Maps ได้</summary>
+          <div class="howto-body">
+            <p>ต่อท้ายชื่อได้เลย เช่น <code>วัดช่อแล 18.8312, 98.9455</code> หรือ <code>วัดแม่อ่อน QX5V+2M</code></p>
+            <p><b>คัดลอกจาก Google Maps (ง่ายสุด):</b> เปิดสถานที่ แตะ<b>ช่องค้นหาด้านบน</b> ที่ขึ้นรหัสแบบ <b>V8CM+P7F ชื่อสถานที่</b> → กดค้าง → เลือกทั้งหมด → คัดลอก แล้วกด 📋 วาง</p>
+            <p><b>พิกัด:</b> กดค้างบนแผนที่ที่<b>ข้างๆ หมุด</b> (ไม่ใช่บนหมุด) แล้วคัดลอกตัวเลขในช่องค้นหา</p>
+            <p><b>ลิงก์:</b> ใช้ลิงก์เต็มที่มี <code>@ละติจูด,ลองจิจูด</code> ได้ ส่วนลิงก์ย่อ (maps.app.goo.gl) อ่านพิกัดไม่ได้</p>
+            <p>ยังไม่เจออีก กด 📍 ที่ช่องสถานที่นั้นเพื่อปักหมุดเองบนแผนที่</p>
+          </div>
+        </details>
         <div class="two-col" style="margin-top:10px;">
           <button class="add-btn" id="pasteBtn" style="margin:0;flex:0 0 auto;width:auto;padding:14px 16px;">📋 วาง</button>
           <button class="add-btn" id="bulkBtn" style="margin:0;">ค้นหาและเพิ่มทั้งหมด</button>
@@ -406,8 +405,9 @@
 <script>
 // ---------- Version ----------
 // Bump APP_VERSION and add a line at the top of RELEASES on every release.
-const APP_VERSION = '1.16';
+const APP_VERSION = '1.17';
 const RELEASES = [
+  ['1.17', '9 พ.ย. 2569', 'หน้าสั้นลง: รวมการนำเข้าลิงก์ Google Maps ไว้ในช่องสถานที่ · พับคำอธิบายยาว · ย่อหัวแอป'],
   ['1.16', '9 พ.ย. 2569', 'บันทึกทริปได้หลายทริป เปิดกลับมาไม่ต้องกรอกซ้ำ · แชร์ทริปเข้า LINE ได้ตรงๆ (ลิงก์สั้นลง)'],
   ['1.15', '9 พ.ย. 2569', 'โหมดระหว่างเดินทาง: กด "ถึงแล้ว" ที่แต่ละจุด แล้วนำทางสดจากตำแหน่งปัจจุบันไปจุดถัดไป'],
   ['1.14', '9 พ.ย. 2569', 'กดคำนวณแล้วเพิ่มรายชื่อ/พิกัดที่ค้างในช่องให้อัตโนมัติ ไม่ต้องกดค้นหาก่อน'],
@@ -717,34 +717,6 @@ function removeStop(id){
 document.getElementById('addStopBtn').addEventListener('click', () => { addStopRow(); saveToStorage(); });
 
 document.getElementById('tripType').addEventListener('change', syncTripTypeFields);
-
-document.getElementById('openLinkBtn').addEventListener('click', () => {
-  const url = document.getElementById('shareLinkInput').value.trim();
-  if(!url) return;
-  const a = document.createElement('a');
-  a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-});
-
-document.getElementById('extractBtn').addEventListener('click', async () => {
-  const url = document.getElementById('fullUrlInput').value.trim();
-  const coords = extractLatLngFromUrl(url);
-  if(!coords){
-    document.getElementById('errorBox').innerHTML = '<div class="error-box">หาพิกัดในลิงก์นี้ไม่เจอ ตรวจสอบว่าเป็น URL เต็มจาก Google Maps (มี @lat,lng หรือ !3d!4d)</div>';
-    return;
-  }
-  addStopRow();
-  const id = stopCount;
-  const nameInput = document.getElementById('stopname-' + id);
-  nameInput.value = 'กำลังค้นหาชื่อสถานที่...';
-  nameInput.dataset.lat = coords.lat; nameInput.dataset.lng = coords.lng;
-  nameInput.value = await reverseGeocodeOSM(coords.lat, coords.lng);
-  checkCanCalc();
-  saveToStorage();
-  document.getElementById('fullUrlInput').value = '';
-});
 
 function extractLatLngFromUrl(url){
   let m = url.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
@@ -1074,7 +1046,12 @@ function addressParts(addr){
 // Split one pasted line into a display name plus coordinates / plus code if present.
 function parsePlaceLine(line){
   const fromUrl = extractLatLngFromUrl(line);
-  if(fromUrl && /https?:\/\//.test(line)) return {name: line.replace(/https?:\/\/\S+/,'').trim(), lat: fromUrl.lat, lng: fromUrl.lng};
+  if(fromUrl && /https?:\/\//.test(line)){
+    let name = line.replace(/https?:\/\/\S+/,'').trim();
+    const pm = line.match(/\/maps\/place\/([^/@?]+)/);          // .../maps/place/วัดโลกโมฬี/@18.79,...
+    if(!name && pm){ try{ name = decodeURIComponent(pm[1].replace(/\+/g,' ')).split(',')[0].trim(); }catch(e){} }
+    return {name, lat: fromUrl.lat, lng: fromUrl.lng};
+  }
   let m = line.match(COORD_RE);
   if(m){
     const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
@@ -1126,7 +1103,7 @@ function startRef(){
 async function resolvePlaceLine(line){
   const p = parsePlaceLine(line);
   if(p.lat != null){
-    return {name: p.name || await reverseGeocodeOSM(p.lat, p.lng), lat: p.lat, lng: p.lng, how: 'พิกัด'};
+    return {name: p.name || (await reverseGeocodeOSM(p.lat, p.lng)).split(',')[0].trim(), lat: p.lat, lng: p.lng, how: 'พิกัด'};
   }
   if(p.plus){
     let ref = startRef();
@@ -1212,7 +1189,10 @@ async function bulkAddFromBox(fromCalc){
       } else {
         input.value = parsePlaceLine(name).name || name;
         document.getElementById('stop-' + stopCount).classList.add('notfound');
-        lines.push(`<span class="bad">✗ ${name} — หาไม่เจอในแผนที่ฟรี</span> <button class="pin-inline" onclick="openPinPicker(${stopCount})">📍 ปักหมุดเอง</button>`);
+        if(/https?:\/\/(maps\.app\.goo\.gl|goo\.gl|share\.google)/i.test(name)){
+          input.value = 'สถานที่จากลิงก์';
+          lines.push(`<span class="bad">✗ ลิงก์ย่ออ่านพิกัดไม่ได้</span> — คัดลอกข้อความในช่องค้นหาของ Google Maps มาแทน หรือ <button class="pin-inline" onclick="openPinPicker(${stopCount})">📍 ปักหมุดเอง</button>`);
+        } else lines.push(`<span class="bad">✗ ${name} — หาไม่เจอในแผนที่ฟรี</span> <button class="pin-inline" onclick="openPinPicker(${stopCount})">📍 ปักหมุดเอง</button>`);
       }
       status.innerHTML = lines.join('<br>');
       if(i < names.length-1) await sleep(1100); // free search service allows ~1 request/second
@@ -2013,6 +1993,7 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
   document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
 }
 </script>
-<div id="verFoot" style="text-align:center;font-size:11px;color:var(--ink-soft);padding:8px 0 90px;"></div>
+<div style="text-align:center;font-size:11px;color:var(--ink-soft);padding:8px 16px 90px;line-height:1.7;">
+  <span id="verFoot"></span><br>ใช้ฟรี · แผนที่และเส้นทางจาก OpenStreetMap / OSRM · อากาศจาก Open-Meteo<br>ชื่อร้านเล็กๆ อาจหาไม่เจอ และไม่มีข้อมูลเวลาเปิด-ปิด</div>
 </body>
 </html>
