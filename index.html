@@ -25,6 +25,15 @@
   header{padding:6px 0 18px;border-bottom:1px solid var(--line);margin-bottom:22px;}
   header h1{font-size:27px;font-weight:700;color:var(--trail-dark);line-height:1.3;}
   header p{margin:8px 0 0;font-size:14px;color:var(--ink-soft);line-height:1.65;}
+  .update-bar{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:10px;padding:10px 16px;
+    background:var(--trail-dark);color:var(--white);font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,.18);}
+  .update-bar[hidden]{display:none;}
+  .update-bar span{flex:1;line-height:1.4;}
+  .update-bar #updateBtn{border:none;background:var(--white);color:var(--trail-dark);border-radius:20px;padding:8px 16px;
+    font-family:'Kanit',sans-serif;font-weight:600;font-size:14px;cursor:pointer;min-height:38px;}
+  .update-bar #updateLater{border:none;background:none;color:var(--white);font-size:18px;cursor:pointer;padding:4px 6px;opacity:.8;}
+  .update-check{margin-top:8px;border:1.5px solid var(--trail);background:var(--white);color:var(--trail-dark);border-radius:10px;
+    padding:8px 12px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;}
   .ver-tag{vertical-align:middle;margin-left:6px;padding:3px 10px;border:1.5px solid var(--trail);border-radius:20px;
     background:var(--white);color:var(--trail-dark);font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:500;cursor:pointer;}
   .changelog{margin:12px 0 4px;padding:12px 14px;background:var(--white);border:1px solid var(--line);border-radius:12px;
@@ -224,6 +233,11 @@
 </style>
 </head>
 <body>
+<div class="update-bar" id="updateBar" hidden>
+  <span>🆕 มีเวอร์ชันใหม่ <b id="updateVer"></b></span>
+  <button type="button" id="updateBtn">อัปเดตเลย</button>
+  <button type="button" id="updateLater" aria-label="ไว้ทีหลัง">✕</button>
+</div>
 <div class="wrap">
   <header>
     <h1>เส้นทางประหยัดเวลา <button type="button" class="ver-tag" id="verTag" aria-expanded="false"></button></h1>
@@ -406,8 +420,9 @@
 <script>
 // ---------- Version ----------
 // Bump APP_VERSION and add a line at the top of RELEASES on every release.
-const APP_VERSION = '1.18';
+const APP_VERSION = '1.19';
 const RELEASES = [
+  ['1.19', '9 พ.ย. 2569', 'แจ้งเตือนเมื่อมีเวอร์ชันใหม่ กด "อัปเดตเลย" ได้ในแอป ไม่ต้องปิดเปิดใหม่'],
   ['1.18', '9 พ.ย. 2569', 'แก้: วางพิกัดในช่องจุดเริ่มต้น/สถานที่ แล้วถูกแทนด้วยสถานที่อื่นที่ค้นเจอ ตอนนี้ใช้พิกัดตรงๆ'],
   ['1.17', '9 พ.ย. 2569', 'หน้าสั้นลง: รวมการนำเข้าลิงก์ Google Maps ไว้ในช่องสถานที่ · พับคำอธิบายยาว · ย่อหัวแอป'],
   ['1.16', '9 พ.ย. 2569', 'บันทึกทริปได้หลายทริป เปิดกลับมาไม่ต้องกรอกซ้ำ · แชร์ทริปเข้า LINE ได้ตรงๆ (ลิงก์สั้นลง)'],
@@ -428,6 +443,36 @@ const RELEASES = [
   ['1.1',  '8 พ.ย. 2569', 'ไอคอนแอป · เพิ่มไปหน้าจอหลักได้'],
   ['1.0',  '8 พ.ย. 2569', 'เปิดตัว: วางแผน 1 วัน พร้อมเวลาเปิด-ปิดสถานที่'],
 ];
+
+// ---------- In-app update ----------
+function newerVersion(a, b){                       // is a newer than b?
+  const x = a.split('.').map(Number), y = b.split('.').map(Number);
+  for(let i=0;i<Math.max(x.length,y.length);i++){ if((x[i]||0) !== (y[i]||0)) return (x[i]||0) > (y[i]||0); }
+  return false;
+}
+let lastUpdateCheck = 0, dismissedVersion = '';
+async function checkForUpdate(force){
+  if(!force && Date.now() - lastUpdateCheck < 5*60*1000) return null;   // at most every 5 min
+  lastUpdateCheck = Date.now();
+  if(location.protocol === 'file:') return null;
+  try{
+    const res = await fetch(location.pathname + '?check=' + Date.now(), {cache: 'no-store'});
+    const m = (await res.text()).match(/const APP_VERSION = '([\d.]+)'/);
+    if(!m) return null;
+    const latest = m[1];
+    if(newerVersion(latest, APP_VERSION) && (force || latest !== dismissedVersion)){
+      document.getElementById('updateVer').textContent = 'v' + latest;
+      document.getElementById('updateBar').hidden = false;
+    }
+    return latest;
+  }catch(e){ return null; }
+}
+function applyUpdate(){
+  try{ saveToStorage(); }catch(e){}
+  const v = document.getElementById('updateVer').textContent.replace('v','');
+  // A new address skips the copy the phone has cached, so the latest version loads.
+  location.replace(location.pathname + '?v=' + encodeURIComponent(v) + '&t=' + Date.now());
+}
 
 let map = null, markerLayer = null;
 let stopCount = 0;
@@ -941,6 +986,25 @@ document.addEventListener('DOMContentLoaded', async function(){
   document.getElementById('verFoot').textContent = 'เส้นทางประหยัดเวลา v' + APP_VERSION;
   document.getElementById('changelog').innerHTML = '<div style="font-weight:600;margin-bottom:4px;">มีอะไรใหม่</div>' +
     RELEASES.map(r => `<div class="rel"><b>v${r[0]}</b><small>${r[1]}</small><br>${r[2]}</div>`).join('');
+  document.getElementById('changelog').insertAdjacentHTML('beforeend',
+    '<button type="button" class="update-check" id="updateCheckBtn">🔄 ตรวจหาอัปเดต</button> <span class="hint" id="updateCheckMsg"></span>');
+  document.getElementById('updateCheckBtn').addEventListener('click', async () => {
+    const msg = document.getElementById('updateCheckMsg');
+    msg.textContent = 'กำลังตรวจ...';
+    const latest = await checkForUpdate(true);
+    msg.textContent = latest === null ? 'ตรวจไม่ได้ (ไม่มีอินเทอร์เน็ต?)'
+      : newerVersion(latest, APP_VERSION) ? `มี v${latest} แล้ว กด "อัปเดตเลย" ด้านบน` : `เป็นเวอร์ชันล่าสุดแล้ว (v${APP_VERSION})`;
+  });
+  document.getElementById('updateBtn').addEventListener('click', applyUpdate);
+  document.getElementById('updateLater').addEventListener('click', () => {
+    dismissedVersion = document.getElementById('updateVer').textContent.replace('v','');
+    document.getElementById('updateBar').hidden = true;
+  });
+  document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') checkForUpdate(false); });
+  setInterval(() => checkForUpdate(false), 30*60*1000);
+  setTimeout(() => checkForUpdate(true), 3000);
+  // Clean the address bar after an update reload.
+  if(/[?&]v=/.test(location.search)) history.replaceState(null, '', location.pathname + location.hash);
   document.getElementById('verTag').addEventListener('click', e => {
     const box = document.getElementById('changelog');
     box.hidden = !box.hidden;
