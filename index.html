@@ -229,6 +229,18 @@
   .pin-sheet{background:var(--white);width:100%;max-width:760px;border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));
     display:flex;flex-direction:column;gap:12px;max-height:92vh;}
   #pinMap{width:100%;height:55vh;border-radius:12px;border:1px solid var(--line);}
+  .share-sheet{gap:14px;}
+  .share-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+  .share-opt{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 4px;border:none;background:none;
+    color:var(--ink);font-family:inherit;font-size:12.5px;text-decoration:none;cursor:pointer;border-radius:12px;}
+  .share-opt:hover{background:var(--paper);}
+  .share-opt[hidden]{display:none;}
+  .so-ico{width:52px;height:52px;border-radius:16px;display:flex;align-items:center;justify-content:center;color:#fff;
+    font-family:'Kanit',sans-serif;font-weight:700;font-size:13px;}
+  .so-line{background:#06C755;}
+  .so-msg{background:linear-gradient(135deg,#0099FF,#A033FF 60%,#FF5280);font-size:24px;}
+  .so-copy{background:var(--trail-dark);font-size:22px;}
+  .so-more{background:var(--paper-2);color:var(--trail-dark);font-size:24px;}
   .pin-actions{display:flex;flex-direction:column;gap:10px;}
   .suggest-dropdown{position:absolute;left:0;right:0;top:100%;background:var(--white);border:1px solid var(--line);
     border-top:none;border-radius:0 0 10px 10px;max-height:220px;overflow-y:auto;z-index:50;display:none;box-shadow:0 4px 10px rgba(34,48,31,.08);}
@@ -399,6 +411,20 @@
 
   <div id="errorBox"></div>
 
+  <div id="shareModal" class="pin-modal" style="display:none;">
+    <div class="pin-sheet share-sheet">
+      <div class="tp-head" id="shareTitle">แชร์ทริป</div>
+      <div class="share-grid">
+        <a class="share-opt" id="shareLine" target="_blank" rel="noopener"><span class="so-ico so-line">LINE</span>LINE</a>
+        <a class="share-opt" id="shareMessenger" target="_blank" rel="noopener"><span class="so-ico so-msg">m</span>Messenger</a>
+        <button type="button" class="share-opt" id="shareCopy"><span class="so-ico so-copy">⧉</span>คัดลอกลิงก์</button>
+        <button type="button" class="share-opt" id="shareMore"><span class="so-ico so-more">⋯</span>แอปอื่นๆ</button>
+      </div>
+      <div class="hint" id="shareHint"></div>
+      <button type="button" class="add-btn" id="shareClose" style="margin:0;">ปิด</button>
+    </div>
+  </div>
+
   <div id="pinModal" class="pin-modal" style="display:none;">
     <div class="pin-sheet">
       <div class="pin-head">
@@ -426,8 +452,9 @@
 <script>
 // ---------- Version ----------
 // Bump APP_VERSION and add a line at the top of RELEASES on every release.
-const APP_VERSION = '1.20';
+const APP_VERSION = '1.21';
 const RELEASES = [
+  ['1.21', '9 พ.ย. 2569', 'แชร์ทริปเข้า LINE และ Messenger ได้ตรงๆ จากในแอป ใช้ได้ทั้งมือถือและคอมพิวเตอร์'],
   ['1.20', '9 พ.ย. 2569', 'แถบบอกเวลาขับระหว่างแต่ละจุด เช่น จุด 1 → 2 · 1 ชม. 44 นาที · 82 กม. รวมขากลับบ้าน'],
   ['1.19', '9 พ.ย. 2569', 'แจ้งเตือนเมื่อมีเวอร์ชันใหม่ กด "อัปเดตเลย" ได้ในแอป ไม่ต้องปิดเปิดใหม่'],
   ['1.18', '9 พ.ย. 2569', 'แก้: วางพิกัดในช่องจุดเริ่มต้น/สถานที่ แล้วถูกแทนด้วยสถานที่อื่นที่ค้นเจอ ตอนนี้ใช้พิกัดตรงๆ'],
@@ -901,13 +928,37 @@ async function shareTrip(t, name){
   const url = location.href.split('#')[0] + '#t=' + await encodeTrip(t);
   const list = tripPlaces(t).map((x,i) => `${i+1}. ${x.name.split(',')[0]}`).join('\n');
   const text = `🧭 ${name}\nเริ่มจาก ${(t.start && t.start.name || '').split(',')[0]}\n${list}\n\nเปิดดูเส้นทางในแอป:`;
-  if(navigator.share){
-    try{ await navigator.share({title: name, text, url}); return; }
-    catch(e){ if(e && e.name === 'AbortError') return; }
-  }
-  try{ await navigator.clipboard.writeText(text + '\n' + url); flashSavedNote('คัดลอกข้อความและลิงก์แล้ว นำไปวางใน LINE ได้เลย'); }
-  catch(e){ window.prompt('คัดลอกลิงก์นี้ไปแชร์:', url); }
+  openShareSheet(name, text, url);
 }
+const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+let shareData = null;
+function openShareSheet(name, text, url){
+  shareData = {name, text, url};
+  document.getElementById('shareTitle').textContent = '📤 แชร์ "' + name + '"';
+  // LINE's share page opens the LINE app on phones, and LINE web/desktop on computers.
+  document.getElementById('shareLine').href = 'https://line.me/R/share?text=' + encodeURIComponent(text + '\n' + url);
+  const msg = document.getElementById('shareMessenger');
+  msg.hidden = !IS_MOBILE;                                   // Messenger's share link only works in the phone app
+  msg.href = 'fb-messenger://share/?link=' + encodeURIComponent(url);
+  document.getElementById('shareMore').hidden = !navigator.share;
+  document.getElementById('shareHint').textContent = IS_MOBILE ? ''
+    : 'บนคอมพิวเตอร์: กด LINE แล้วล็อกอิน LINE ในเบราว์เซอร์ หรือกด "คัดลอกลิงก์" แล้ววางในแชท LINE';
+  document.getElementById('shareModal').style.display = 'flex';
+}
+function closeShareSheet(){ document.getElementById('shareModal').style.display = 'none'; }
+document.getElementById('shareClose').addEventListener('click', closeShareSheet);
+document.getElementById('shareModal').addEventListener('click', e => { if(e.target.id === 'shareModal') closeShareSheet(); });
+document.getElementById('shareLine').addEventListener('click', () => setTimeout(closeShareSheet, 300));
+document.getElementById('shareMessenger').addEventListener('click', () => setTimeout(closeShareSheet, 300));
+document.getElementById('shareCopy').addEventListener('click', async () => {
+  const all = shareData.text + '\n' + shareData.url;
+  try{ await navigator.clipboard.writeText(all); closeShareSheet(); flashSavedNote('คัดลอกข้อความและลิงก์แล้ว นำไปวางในแชทได้เลย'); }
+  catch(e){ window.prompt('คัดลอกลิงก์นี้ไปแชร์:', shareData.url); }
+});
+document.getElementById('shareMore').addEventListener('click', async () => {
+  try{ await navigator.share({title: shareData.name, text: shareData.text, url: shareData.url}); closeShareSheet(); }
+  catch(e){}
+});
 
 const SAVED_KEY = 'route_optimizer_saved_trips_v1';
 function loadSavedTrips(){ try{ return JSON.parse(localStorage.getItem(SAVED_KEY) || '[]'); }catch(e){ return []; } }
