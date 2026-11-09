@@ -452,9 +452,10 @@
 <script>
 // ---------- Version ----------
 // Bump APP_VERSION and add a line at the top of RELEASES on every release.
-const APP_VERSION = '1.22';
+const APP_VERSION = '1.23';
 const RELEASES = [
-  ['1.22', '9 พ.ย. 2569', 'ลิงก์แชร์สั้นลง: เก็บเฉพาะข้อมูลที่จำเป็น และย่อเป็น is.gd/... ให้อัตโนมัติ'],
+  ['1.23', '9 พ.ย. 2569', 'เลิกใช้ลิงก์ย่อ is.gd (ลิงก์ที่ได้เปิดไม่ได้) กลับมาใช้ลิงก์ของแอปที่สั้นลงครึ่งหนึ่ง'],
+  ['1.22', '9 พ.ย. 2569', 'ลิงก์แชร์สั้นลงครึ่งหนึ่ง: เก็บเฉพาะข้อมูลที่จำเป็น'],
   ['1.21', '9 พ.ย. 2569', 'แชร์ทริปเข้า LINE และ Messenger ได้ตรงๆ จากในแอป ใช้ได้ทั้งมือถือและคอมพิวเตอร์'],
   ['1.20', '9 พ.ย. 2569', 'แถบบอกเวลาขับระหว่างแต่ละจุด เช่น จุด 1 → 2 · 1 ชม. 44 นาที · 82 กม. รวมขากลับบ้าน'],
   ['1.19', '9 พ.ย. 2569', 'แจ้งเตือนเมื่อมีเวอร์ชันใหม่ กด "อัปเดตเลย" ได้ในแอป ไม่ต้องปิดเปิดใหม่'],
@@ -960,20 +961,6 @@ async function shareTrip(t, name){
   openShareSheet(name, text, url);
 }
 const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-const shortCache = {};
-function shortenUrl(url){
-  if(shortCache[url]) return Promise.resolve(shortCache[url]);
-  return new Promise(resolve => {
-    const cb = 'isgd_' + Date.now();
-    const el = document.createElement('script');
-    const done = v => { clearTimeout(timer); delete window[cb]; el.remove(); if(v) shortCache[url] = v; resolve(v || null); };
-    const timer = setTimeout(() => done(null), 6000);
-    window[cb] = d => done(d && d.shorturl);
-    el.onerror = () => done(null);
-    el.src = 'https://is.gd/create.php?format=json&callback=' + cb + '&url=' + encodeURIComponent(url);
-    document.head.appendChild(el);
-  });
-}
 function setShareLinks(text, url){
   document.getElementById('shareLine').href = 'https://line.me/R/share?text=' + encodeURIComponent(text + '\n' + url);
   document.getElementById('shareMessenger').href = 'fb-messenger://share/?link=' + encodeURIComponent(url);
@@ -989,13 +976,8 @@ function openShareSheet(name, text, url){
   document.getElementById('shareMore').hidden = !navigator.share;
   const hint = document.getElementById('shareHint');
   const deskTip = IS_MOBILE ? '' : ' · บนคอมพิวเตอร์ ถ้าใช้ LINE แบบโปรแกรม กด "คัดลอกลิงก์" แล้ววางในแชทจะเร็วกว่า';
-  hint.textContent = 'กำลังย่อลิงก์...' + deskTip;
+  hint.textContent = deskTip.replace(' · ', '');
   document.getElementById('shareModal').style.display = 'flex';
-  shortenUrl(url).then(short => {
-    if(!shareData || shareData.longUrl !== url) return;          // sheet was reopened for another trip
-    if(short){ setShareLinks(text, short); hint.textContent = '✓ ย่อลิงก์แล้ว: ' + short.replace('https://','') + deskTip; }
-    else hint.textContent = 'ย่อลิงก์ไม่ได้ตอนนี้ จะส่งลิงก์แบบเต็มแทน' + deskTip;
-  });
 }
 function closeShareSheet(){ document.getElementById('shareModal').style.display = 'none'; }
 document.getElementById('shareClose').addEventListener('click', closeShareSheet);
