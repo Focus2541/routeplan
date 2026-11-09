@@ -452,8 +452,9 @@
 <script>
 // ---------- Version ----------
 // Bump APP_VERSION and add a line at the top of RELEASES on every release.
-const APP_VERSION = '1.23';
+const APP_VERSION = '1.24';
 const RELEASES = [
+  ['1.24', '9 พ.ย. 2569', 'แก้: ข้อความแชร์ตัดพิกัดจุดเริ่มต้นครึ่งเดียว ("เริ่มจาก 19.149982")'],
   ['1.23', '9 พ.ย. 2569', 'เลิกใช้ลิงก์ย่อ is.gd (ลิงก์ที่ได้เปิดไม่ได้) กลับมาใช้ลิงก์ของแอปที่สั้นลงครึ่งหนึ่ง'],
   ['1.22', '9 พ.ย. 2569', 'ลิงก์แชร์สั้นลงครึ่งหนึ่ง: เก็บเฉพาะข้อมูลที่จำเป็น'],
   ['1.21', '9 พ.ย. 2569', 'แชร์ทริปเข้า LINE และ Messenger ได้ตรงๆ จากในแอป ใช้ได้ทั้งมือถือและคอมพิวเตอร์'],
@@ -949,15 +950,15 @@ function thaiDate(d, withTime){
 }
 function tripPlaces(t){ return (t.stops || []).filter(x => (x.name || '').trim()); }
 function defaultTripName(t){
-  const ps = tripPlaces(t).map(x => x.name.split(',')[0].trim());
+  const ps = tripPlaces(t).map(x => shortName(x.name));
   const when = t.startDateTime ? thaiDate(new Date(t.startDateTime)) + ' · ' : '';
   return when + (ps.slice(0,2).join(', ') || 'ทริปใหม่') + (ps.length > 2 ? ` +${ps.length-2}` : '');
 }
 async function shareTrip(t, name){
   name = name || defaultTripName(t);
   const url = location.href.split('#')[0] + '#t=' + await encodeTrip(t);
-  const list = tripPlaces(t).map((x,i) => `${i+1}. ${x.name.split(',')[0]}`).join('\n');
-  const text = `🧭 ${name}\nเริ่มจาก ${(t.start && t.start.name || '').split(',')[0]}\n${list}\n\nเปิดดูเส้นทางในแอป:`;
+  const list = tripPlaces(t).map((x,i) => `${i+1}. ${shortName(x.name)}`).join('\n');
+  const text = `🧭 ${name}\nเริ่มจาก ${shortName(t.start && t.start.name)}\n${list}\n\nเปิดดูเส้นทางในแอป:`;
   openShareSheet(name, text, url);
 }
 const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
