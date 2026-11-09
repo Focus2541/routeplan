@@ -276,7 +276,9 @@
       <div class="card-title"><span class="ico">🚩</span> จุดที่ต้องไป</div>
       <div class="field">
         <label class="label" for="bulkInput">📝 วางรายชื่อสถานที่ (บรรทัดละ 1 ที่) — ไม่ต้องเรียงลำดับ</label>
-        <textarea id="bulkInput" rows="4" placeholder="เช่น&#10;วัดป่าแดด&#10;วัดช่อแล 18.8312, 98.9455&#10;วัดแม่อ่อน QX5V+2M&#10;ศาลหลักเมือง"></textarea>
+        <div style="position:relative;" id="bulkWrap">
+          <textarea id="bulkInput" rows="4" autocomplete="off" placeholder="พิมพ์ชื่อสถานที่ แล้วเลือกจากรายการ&#10;หรือวางหลายที่ บรรทัดละ 1 ที่ เช่น&#10;วัดป่าแดด&#10;วัดช่อแล 18.8312, 98.9455&#10;วัดแม่อ่อน QX5V+2M"></textarea>
+        </div>
         <div class="hint">ใส่แค่ชื่อก็ได้ ระบบหาที่ที่ใกล้จุดเริ่มต้นให้ ถ้าที่ไหนหาไม่เจอ ใส่พิกัดหรือ Plus Code ต่อท้ายชื่อได้<br>
         <b>เอาตำแหน่งจาก Google Maps (ง่ายสุด):</b> เปิดสถานที่ แตะที่<b>ช่องค้นหาด้านบน</b> ที่ขึ้นรหัสแบบ <b>V8CM+P7F ชื่อสถานที่</b> → กดค้าง → เลือกทั้งหมด → คัดลอก แล้วกด 📋 วาง ได้ทั้งบรรทัด<br>
         หรือแตะบรรทัดที่อยู่ในหน้าข้อมูลสถานที่ (Google จะคัดลอกให้) ส่วนการกดค้างบนแผนที่ ให้กดค้างที่<b>ข้างๆ หมุด</b> ไม่ใช่บนหมุด</div>
@@ -360,8 +362,9 @@
 <script>
 // ---------- Version ----------
 // Bump APP_VERSION and add a line at the top of RELEASES on every release.
-const APP_VERSION = '1.12';
+const APP_VERSION = '1.13';
 const RELEASES = [
+  ['1.13', '9 พ.ย. 2569', 'ช่องรายชื่อสถานที่มีรายการให้เลือกขณะพิมพ์ แตะแล้วเพิ่มเป็นจุดที่ต้องไปทันที'],
   ['1.12', '9 พ.ย. 2569', 'ตอนกดคำนวณ ใช้วิธีหาตำแหน่งแบบใหม่ด้วย (แยกชื่อกับที่อยู่, Plus Code, จุดกลางตำบล) และจำตำแหน่งที่หาเจอไว้'],
   ['1.11', '9 พ.ย. 2569', 'เลขเวอร์ชันและประวัติการอัปเดต'],
   ['1.10', '9 พ.ย. 2569', 'รวมข้อความ 2 บรรทัดที่คัดลอกจาก Google เป็นที่เดียว · ค้นจากชื่อแยกจากที่อยู่ · ใช้จุดกลางตำบลเมื่อหาไม่เจอ'],
@@ -548,6 +551,60 @@ function attachPlaceSearch(input){
   }, 500);
   input.addEventListener('input', () => { delete input.dataset.lat; delete input.dataset.lng; doSearch(); });
   input.addEventListener('blur', () => setTimeout(() => dropdown.style.display = 'none', 200));
+}
+
+// Suggestions for the line being typed in the place list; picking one adds it as a stop right away.
+function attachListSearch(box){
+  const wrap = document.getElementById('bulkWrap');
+  const dropdown = document.createElement('div');
+  dropdown.className = 'suggest-dropdown';
+  wrap.appendChild(dropdown);
+  const currentLine = () => {
+    const v = box.value, c = box.selectionStart ?? v.length;
+    const a = v.lastIndexOf('\n', c - 1) + 1, e = v.indexOf('\n', c);
+    return {a, b: e === -1 ? v.length : e, text: v.slice(a, e === -1 ? v.length : e).trim()};
+  };
+  let last = '';
+  const doSearch = debounce(async () => {
+    const ln = currentLine();
+    const p = parsePlaceLine(ln.text);
+    if(ln.text.length < 3 || p.lat != null || p.plus){ dropdown.style.display = 'none'; return; }
+    last = ln.text;
+    try{
+      const data = await searchPlaces(p.name || ln.text, 5);
+      if(last !== ln.text) return;            // user kept typing
+      if(!data.length){ dropdown.style.display = 'none'; return; }
+      dropdown.innerHTML = data.map((d,i) => `<div class="suggest-item" data-i="${i}">${d.display_name}</div>`).join('');
+      dropdown.style.display = 'block';
+      dropdown.querySelectorAll('.suggest-item').forEach(el => {
+        el.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          const d = data[el.dataset.i];
+          // Fill an empty stop row if there is one, otherwise add a new row.
+          let input = Array.from(document.querySelectorAll('#stopsList input[id^="stopname-"]')).find(i => !i.value.trim());
+          if(!input){ addStopRow(); input = document.getElementById('stopname-' + stopCount); }
+          input.value = shortPlaceName(d);
+          input.title = d.display_name;
+          input.dataset.lat = d.lat; input.dataset.lng = d.lon;
+          const row = input.closest('.stop'); if(row) row.classList.remove('notfound');
+          // Remove the picked line from the box and keep typing there.
+          const cur = currentLine();
+          let v = box.value.slice(0, cur.a) + box.value.slice(cur.b);
+          v = v.replace(/\n{2,}/g, '\n').replace(/^\n|\n$/g, '');
+          box.value = v;
+          box.setSelectionRange(Math.min(cur.a, v.length), Math.min(cur.a, v.length));
+          dropdown.style.display = 'none';
+          const st = document.getElementById('bulkStatus');
+          const area = d.display_name.split(',').slice(1,3).join(',').trim();
+          st.innerHTML = `<span class="ok">✓ เพิ่ม ${input.value} แล้ว</span>${area ? ` <span style="color:var(--ink-soft)">— ${area}</span>` : ''}`;
+          checkCanCalc(); saveToStorage();
+        });
+      });
+    }catch(e){ dropdown.style.display = 'none'; }
+  }, 500);
+  box.addEventListener('input', doSearch);
+  box.addEventListener('click', doSearch);
+  box.addEventListener('blur', () => setTimeout(() => dropdown.style.display = 'none', 200));
 }
 
 function addStopRow(){
@@ -753,6 +810,7 @@ document.addEventListener('DOMContentLoaded', function(){
   initMap();
 
   attachPlaceSearch(document.getElementById('startInput'));
+  attachListSearch(document.getElementById('bulkInput'));
   document.getElementById('startInput').addEventListener('input', checkCanCalc);
 
   if(importedTrip){
