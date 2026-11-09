@@ -177,6 +177,14 @@
   .howto-body{font-size:12.5px;color:var(--ink-soft);line-height:1.65;background:var(--paper);border-radius:10px;padding:10px 12px;}
   .howto-body p{margin:0 0 6px;} .howto-body p:last-child{margin:0;}
   .howto-body code{font-family:'IBM Plex Mono',monospace;font-size:12px;background:var(--white);padding:1px 5px;border-radius:5px;color:var(--ink);}
+  body.viewer header p, body.viewer #savedCard, body.viewer #formSection, body.viewer .calc-bar,
+  body.viewer #savedNote, body.viewer .mode-line{display:none !important;}
+  body.viewer header{margin-bottom:12px;padding-bottom:10px;}
+  .viewer-bar{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:4px;}
+  .viewer-bar[hidden]{display:none;}
+  .vb-title{font-family:'Kanit',sans-serif;font-weight:600;font-size:18px;color:var(--trail-dark);line-height:1.4;}
+  .vb-sub{font-size:13px;color:var(--ink-soft);margin-top:2px;line-height:1.5;}
+  .vb-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
   .trip-panel{position:sticky;top:0;z-index:25;margin-top:14px;padding:14px 16px;background:var(--white);
     border:2px solid var(--trail-dark);border-radius:14px;box-shadow:0 4px 14px rgba(34,48,31,.12);}
   .trip-panel .routebtn{margin:10px 0 4px;}
@@ -262,6 +270,14 @@
     <div class="changelog" id="changelog" hidden></div>
     <p>ใส่สถานที่ที่อยากไป แล้วให้แอปบอกว่าควรไปที่ไหนก่อน</p>
   </header>
+  <div class="viewer-bar" id="viewerBar" hidden>
+    <div class="vb-title" id="vbTitle">ทริปที่แชร์มา</div>
+    <div class="vb-sub" id="vbSub">กำลังคำนวณเส้นทาง...</div>
+    <div class="vb-acts">
+      <button type="button" class="si-btn primary" id="vbSave">💾 บันทึกทริปนี้</button>
+      <button type="button" class="si-btn" id="vbEdit">✏️ แก้ไขเส้นทาง</button>
+    </div>
+  </div>
 
   <details class="card" id="savedCard">
     <summary><span class="ico">📁</span> ทริปที่บันทึกไว้ <span class="saved-count" id="savedCount"></span></summary>
@@ -452,8 +468,9 @@
 <script>
 // ---------- Version ----------
 // Bump APP_VERSION and add a line at the top of RELEASES on every release.
-const APP_VERSION = '1.25';
+const APP_VERSION = '1.26';
 const RELEASES = [
+  ['1.26', '9 พ.ย. 2569', 'เปิดลิงก์แชร์แล้วเห็นเฉพาะหน้าเส้นทาง คำนวณให้อัตโนมัติ มีปุ่มบันทึกและแก้ไข'],
   ['1.25', '9 พ.ย. 2569', 'แก้: เปิดลิงก์แชร์ที่มีข้อความแชทติดท้ายแล้วได้หน้าเปล่า ตอนนี้อ่านได้ และบอกชัดถ้าลิงก์เสีย'],
   ['1.24', '9 พ.ย. 2569', 'แก้: ข้อความแชร์ตัดพิกัดจุดเริ่มต้นครึ่งเดียว ("เริ่มจาก 19.149982")'],
   ['1.23', '9 พ.ย. 2569', 'เลิกใช้ลิงก์ย่อ is.gd (ลิงก์ที่ได้เปิดไม่ได้) กลับมาใช้ลิงก์ของแอปที่สั้นลงครึ่งหนึ่ง'],
@@ -552,10 +569,13 @@ function expandTrip(c){
     const f = STOP_DEFAULTS.map((d, i) => a[i] != null ? a[i] : d);
     return {name: f[0], lat: f[1], lng: f[2], dur: f[3], prio: f[4], cost: f[5], open: f[6], close: f[7]};
   });
+  if(c[4]) t._name = c[4];
   return t;
 }
-async function encodeTrip(trip){
-  const bytes = new TextEncoder().encode(JSON.stringify(compactTrip(trip)));
+async function encodeTrip(trip, name){
+  const c = compactTrip(trip);
+  if(name) c.push(name);
+  const bytes = new TextEncoder().encode(JSON.stringify(c));
   if(typeof CompressionStream !== 'undefined'){
     try{ return 'z.' + b64u(await pipeBytes(bytes, new CompressionStream('deflate-raw'))); }catch(e){}
   }
@@ -975,7 +995,7 @@ function defaultTripName(t){
 }
 async function shareTrip(t, name){
   name = name || defaultTripName(t);
-  const url = location.href.split('#')[0] + '#t=' + await encodeTrip(t);
+  const url = location.href.split('#')[0] + '#t=' + await encodeTrip(t, name);
   const list = tripPlaces(t).map((x,i) => `${i+1}. ${shortName(x.name)}`).join('\n');
   const text = `🧭 ${name}\nเริ่มจาก ${shortName(t.start && t.start.name)}\n${list}\n\nเปิดดูเส้นทางในแอป:`;
   openShareSheet(name, text, url);
@@ -1029,7 +1049,7 @@ function saveCurrentTrip(){
   const list = loadSavedTrips(), sig = tripSignature(t);
   const same = list.find(x => tripSignature(x.trip) === sig);
   if(same){ same.trip = t; same.savedAt = Date.now(); }
-  else list.unshift({id: Date.now().toString(36), name: defaultTripName(t), savedAt: Date.now(), trip: t});
+  else list.unshift({id: Date.now().toString(36), name: (document.body.classList.contains('viewer') && viewerName) || defaultTripName(t), savedAt: Date.now(), trip: t});
   if(storeSavedTrips(list)){
     renderSavedTrips();
     document.getElementById('savedCard').open = true;
@@ -1136,8 +1156,7 @@ document.addEventListener('DOMContentLoaded', async function(){
   if(importedTrip){
     applyTrip(importedTrip);
     saveToStorage();
-    history.replaceState(null, '', location.pathname + location.search);   // later reloads use the local copy
-    flashSavedNote('เปิดทริปที่แชร์มาแล้ว — กด "💾 บันทึกทริปนี้" เพื่อเก็บไว้');
+    enterViewer(importedTrip);            // the link stays in the address bar, so a reload shows the route again
   } else {
     const saved = loadFromStorage();
     if(saved){
@@ -1156,6 +1175,36 @@ document.addEventListener('DOMContentLoaded', async function(){
   }
   syncTripTypeFields();
   checkCanCalc();
+});
+
+// ---------- Viewer mode (opening a shared link) ----------
+let viewerName = '';
+function enterViewer(t){
+  document.body.classList.add('viewer');
+  const name = viewerName = t._name || defaultTripName(t);
+  document.getElementById('viewerBar').hidden = false;
+  document.getElementById('vbTitle').textContent = '🧭 ' + name;
+  document.title = name + ' · เส้นทางประหยัดเวลา';
+  const sub = document.getElementById('vbSub');
+  sub.textContent = `เริ่มจาก ${shortName(t.start && t.start.name)} · ${tripPlaces(t).length} สถานที่ · กำลังคำนวณเส้นทาง...`;
+  runOptimization().then(() => {
+    const ok = document.getElementById('results').style.display !== 'none';
+    sub.textContent = `เริ่มจาก ${shortName(t.start && t.start.name)} · ${tripPlaces(t).length} สถานที่` +
+      (ok ? '' : ' · คำนวณไม่สำเร็จ ลองรีเฟรชอีกครั้ง');
+  });
+}
+function exitViewer(){
+  document.body.classList.remove('viewer');
+  document.getElementById('viewerBar').hidden = true;
+  document.title = 'เส้นทางประหยัดเวลา';
+  history.replaceState(null, '', location.pathname);
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+document.getElementById('vbEdit').addEventListener('click', exitViewer);
+document.getElementById('vbSave').addEventListener('click', () => {
+  saveCurrentTrip();
+  const b = document.getElementById('vbSave');
+  b.textContent = '✓ บันทึกแล้ว'; b.disabled = true;
 });
 
 function checkCanCalc(){
@@ -2207,7 +2256,7 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
   startTripProgress(tripSeq);
 
   if(map && bounds.length) map.fitBounds(bounds, {padding:[30,30]});
-  document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
+  if(!document.body.classList.contains('viewer')) document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
 }
 </script>
 <div style="text-align:center;font-size:11px;color:var(--ink-soft);padding:8px 16px 90px;line-height:1.7;">
