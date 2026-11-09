@@ -147,6 +147,26 @@
   .choice.on{border-color:var(--trail-dark);background:#E8F0EC;}
   .choice.on::after{border-color:var(--trail-dark);background:radial-gradient(var(--trail-dark) 0 45%, transparent 50%);}
   .choice:focus-visible{outline:2px solid var(--trail);outline-offset:2px;}
+  .trip-panel{position:sticky;top:0;z-index:25;margin-top:14px;padding:14px 16px;background:var(--white);
+    border:2px solid var(--trail-dark);border-radius:14px;box-shadow:0 4px 14px rgba(34,48,31,.12);}
+  .trip-panel .routebtn{margin:10px 0 4px;}
+  .tp-head{font-family:'Kanit',sans-serif;font-weight:600;font-size:16px;color:var(--trail-dark);line-height:1.4;}
+  .tp-sub{font-size:12px;color:var(--ink-soft);margin-top:2px;line-height:1.5;}
+  .tp-bar{height:6px;background:var(--paper-2);border-radius:6px;margin-top:10px;overflow:hidden;}
+  .tp-bar span{display:block;height:100%;background:var(--trail);border-radius:6px;transition:width .3s;}
+  .tp-links{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;margin-top:6px;}
+  .tp-reset{border:none;background:none;color:var(--ink-soft);text-decoration:underline;font-family:inherit;font-size:12px;cursor:pointer;padding:4px 0;}
+  .leg-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-top:6px;}
+  .leg-actions .navlink{margin-top:0;}
+  .done-btn{border:1.5px solid var(--trail);background:var(--white);color:var(--trail-dark);border-radius:20px;
+    padding:6px 14px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;min-height:36px;}
+  .stopitem.done .marker{background:var(--trail);}
+  .stopitem.done .marker::after{content:'✓';position:absolute;right:-4px;top:-4px;width:14px;height:14px;border-radius:50%;
+    background:var(--white);color:var(--trail);font-size:10px;line-height:14px;text-align:center;}
+  .stopitem.done .name,.stopitem.done .meta{opacity:.55;}
+  .stopitem.done .done-btn{border-color:var(--line);color:var(--ink-soft);}
+  .stopitem.next{background:#E8F0EC;margin-left:-10px;padding:8px 10px 14px;border-radius:12px;}
+  .stopitem.next .marker{left:-24px;}
   .mode-line{margin-top:14px;padding:12px 14px;background:var(--paper-2);border-radius:10px;font-size:13px;line-height:1.8;}
   .routebtns{display:flex;flex-direction:column;gap:8px;margin:14px 0 18px;}
   .routebtn{display:block;text-align:center;padding:14px;border-radius:12px;background:var(--trail-dark);color:var(--white);
@@ -362,8 +382,9 @@
 <script>
 // ---------- Version ----------
 // Bump APP_VERSION and add a line at the top of RELEASES on every release.
-const APP_VERSION = '1.14';
+const APP_VERSION = '1.15';
 const RELEASES = [
+  ['1.15', '9 พ.ย. 2569', 'โหมดระหว่างเดินทาง: กด "ถึงแล้ว" ที่แต่ละจุด แล้วนำทางสดจากตำแหน่งปัจจุบันไปจุดถัดไป'],
   ['1.14', '9 พ.ย. 2569', 'กดคำนวณแล้วเพิ่มรายชื่อ/พิกัดที่ค้างในช่องให้อัตโนมัติ ไม่ต้องกดค้นหาก่อน'],
   ['1.13', '9 พ.ย. 2569', 'ช่องรายชื่อสถานที่มีรายการให้เลือกขณะพิมพ์ แตะแล้วเพิ่มเป็นจุดที่ต้องไปทันที'],
   ['1.12', '9 พ.ย. 2569', 'ตอนกดคำนวณ ใช้วิธีหาตำแหน่งแบบใหม่ด้วย (แยกชื่อกับที่อยู่, Plus Code, จุดกลางตำบล) และจำตำแหน่งที่หาเจอไว้'],
@@ -1606,11 +1627,80 @@ async function runOptimization(){
   }
 }
 
+// ---------- On-the-road progress ----------
+// Google Maps only gives live turn-by-turn when the trip starts from "your location",
+// so these links leave the origin out and let the phone use where you are now.
+function navHereUrl(p){
+  return `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=driving&dir_action=navigate`;
+}
+function navRemainingUrl(list){
+  const part = list.slice(0, 10);               // Google allows up to 9 stops in between
+  const dest = part[part.length-1];
+  const wps = part.slice(0, -1).map(q => `${q.lat},${q.lng}`).join('|');
+  return `https://www.google.com/maps/dir/?api=1&destination=${dest.lat},${dest.lng}` +
+    (wps ? `&waypoints=${encodeURIComponent(wps)}` : '') + '&travelmode=driving&dir_action=navigate';
+}
+let tripSeqNow = [], tripDone = new Set(), tripKey = '';
+const PROGRESS_KEY = 'route_optimizer_progress_v1';
+function startTripProgress(seq){
+  tripSeqNow = seq;
+  tripKey = seq.map(q => `${(+q.lat).toFixed(5)},${(+q.lng).toFixed(5)}`).join('|');
+  tripDone = new Set();
+  try{
+    const saved = JSON.parse(localStorage.getItem(PROGRESS_KEY) || 'null');
+    if(saved && saved.key === tripKey) tripDone = new Set(saved.done);   // same route: keep ticks
+  }catch(e){}
+  renderTripProgress();
+}
+function saveTripProgress(){
+  try{ localStorage.setItem(PROGRESS_KEY, JSON.stringify({key: tripKey, done: [...tripDone]})); }catch(e){}
+}
+function renderTripProgress(){
+  const panel = document.getElementById('tripPanel');
+  if(!panel) return;
+  if(!tripSeqNow.length){ panel.style.display = 'none'; return; }
+  const nextIdx = tripSeqNow.findIndex((_, i) => !tripDone.has(i));
+  document.querySelectorAll('#tripBody .stopitem[data-seq]').forEach(el => {
+    const i = +el.dataset.seq;
+    el.classList.toggle('done', tripDone.has(i));
+    el.classList.toggle('next', i === nextIdx);
+    const b = el.querySelector('.done-btn');
+    if(b) b.textContent = tripDone.has(i) ? '↺ ยังไม่ถึง' : '✓ ถึงแล้ว';
+  });
+  const doneCount = tripDone.size, total = tripSeqNow.length;
+  const bar = `<div class="tp-bar"><span style="width:${Math.round(doneCount/total*100)}%"></span></div>`;
+  if(nextIdx === -1){
+    panel.innerHTML = `<div class="tp-head">🎉 ครบทุกจุดแล้ว (${total}/${total})</div>${bar}
+      <button type="button" class="tp-reset" id="tpReset">เริ่มนับใหม่</button>`;
+  } else {
+    const nx = tripSeqNow[nextIdx];
+    const remaining = tripSeqNow.filter((_, i) => !tripDone.has(i));
+    panel.innerHTML = `<div class="tp-head">ต่อไป: ${nx.home ? '🏠 กลับจุดเริ่มต้น' : `จุดที่ ${nx.num} · ${nx.name}`}</div>
+      <div class="tp-sub">ไปแล้ว ${doneCount}/${total} · ถึงแล้วกด "✓ ถึงแล้ว" ที่จุดนั้น ปุ่มนี้จะเปลี่ยนเป็นจุดถัดไปให้เอง</div>${bar}
+      <a class="routebtn" href="${navHereUrl(nx)}" target="_blank" rel="noopener">🧭 นำทางจากตรงนี้ไป${nx.home ? 'จุดเริ่มต้น' : 'จุดที่ ' + nx.num}</a>
+      <div class="tp-links">
+        <button type="button" class="done-btn" data-seq="${nextIdx}">✓ ถึง${nx.home ? 'บ้าน' : 'จุดที่ ' + nx.num}แล้ว</button>
+        ${remaining.length > 1 ? `<a class="navlink" href="${navRemainingUrl(remaining)}" target="_blank" rel="noopener">นำทางที่เหลือทั้งหมด (${Math.min(remaining.length,10)} จุด) →</a>` : ''}
+        ${doneCount ? `<button type="button" class="tp-reset" id="tpReset">เริ่มนับใหม่</button>` : ''}
+      </div>`;
+  }
+  const r = document.getElementById('tpReset');
+  if(r) r.addEventListener('click', () => { tripDone.clear(); saveTripProgress(); renderTripProgress(); });
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('.done-btn');
+  if(!b || b.dataset.seq == null) return;
+  const i = +b.dataset.seq;
+  if(tripDone.has(i)) tripDone.delete(i); else tripDone.add(i);
+  saveTripProgress(); renderTripProgress();
+});
+
 async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, tripType, budgetInfo, opts){
   document.getElementById('results').style.display = 'block';
   if(markerLayer) markerLayer.clearLayers();
 
   let totalTravelSec = 0, totalDistM = 0, totalVisitSec = 0, globalMarkerNum = 1;
+  const tripSeq = [];
   let bodyHtml = '';
   const bounds = [];
 
@@ -1678,11 +1768,13 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
         bounds.push([p.lat, p.lng]);
       }
 
-      let navLink = '';
-      if(pos>0){
-        const prevP = allPoints[dayOrder[pos-1]];
-        const navUrl = `https://www.google.com/maps/dir/?api=1&origin=${prevP.lat},${prevP.lng}&destination=${p.lat},${p.lng}&travelmode=driving`;
-        navLink = `<a href="${navUrl}" target="_blank" rel="noopener" class="navlink">เปิดนำทางไปจุดนี้ →</a>`;
+      let navLink = '', seqAttr = '';
+      if(pos>0 && !isBoundaryRepeat){
+        const n = tripSeq.length;
+        tripSeq.push({lat:p.lat, lng:p.lng, name:p.label, num:markerLabel});
+        seqAttr = ` data-seq="${n}"`;
+        navLink = `<div class="leg-actions"><a href="${navHereUrl(p)}" target="_blank" rel="noopener" class="navlink">🧭 นำทางไปจุดนี้ →</a>
+          <button type="button" class="done-btn" data-seq="${n}">✓ ถึงแล้ว</button></div>`;
       }
 
       const sch = budgetInfo.schedule && budgetInfo.schedule[globalIdx];
@@ -1698,7 +1790,7 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
         metaText += ` · ออก ${fmtClock(sch.depart)}`;
       } else metaText = `เดินทาง ${fmtMin(mat[dayOrder[pos-1]][globalIdx])} นาที · ถึงประมาณ ${cum.getHours()}:${String(cum.getMinutes()).padStart(2,'0')}`;
 
-      bodyHtml += `<div class="stopitem">
+      bodyHtml += `<div class="stopitem"${seqAttr}>
         <div class="marker">${markerLabel}</div>
         <div class="name">${p.label}</div>
         <div class="meta">${metaText}${(!isBoundaryRepeat && p.durationSec>0) ? ` · อยู่ ${fmtMin(p.durationSec)} นาที` : ''}${(!isBoundaryRepeat && p.costBaht>0) ? ` · ${p.costBaht} บาท` : ''}</div>
@@ -1707,6 +1799,10 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
       </div>`;
     }
     bodyHtml += '</div>';
+    if(returningToday && dayOrder.length > 1){
+      const home = allPoints[days[0][0]];
+      tripSeq.push({lat:home.lat, lng:home.lng, name:'กลับจุดเริ่มต้น', num:'🏠', home:true});
+    }
     if(returningToday && budgetInfo.finishSec != null && dayOrder.length > 1){
       bodyHtml += `<div class="tripsummary" style="text-align:left;margin:14px 0 0;">🏠 กลับถึงจุดเริ่มต้นประมาณ ${fmtClock(budgetInfo.finishSec)}</div>`;
     }
@@ -1773,7 +1869,8 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
   const apHtml = ap.length ? `<div class="mode-line" style="background:#FBEFE3;">≈ ตำแหน่งโดยประมาณ (ใช้จุดกลางตำบล อาจคลาดหลายกม.): <b>${ap.map(a => a.name).join(', ')}</b> — กด 📍 ที่ช่องนั้นเพื่อปักหมุดให้ตรง</div>` : '';
   const sk = window._skippedPlaces || [];
   const skHtml = sk.length ? `<div class="error-box" style="margin-top:12px;">ไม่ได้รวมในเส้นทาง เพราะหาตำแหน่งไม่เจอ: <b>${sk.join(', ')}</b> — แก้ชื่อในช่องกรอบแดงแล้วกดคำนวณใหม่</div>` : '';
-  document.getElementById('tripBody').innerHTML = skHtml + apHtml + modeLine + `<div class="tripsummary">${budgetLine}</div>` + bodyHtml;
+  document.getElementById('tripBody').innerHTML = `<div id="tripPanel" class="trip-panel"></div>` + skHtml + apHtml + modeLine + `<div class="tripsummary">${budgetLine}</div>` + bodyHtml;
+  startTripProgress(tripSeq);
 
   if(map && bounds.length) map.fitBounds(bounds, {padding:[30,30]});
   document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
