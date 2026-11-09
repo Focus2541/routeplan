@@ -452,8 +452,9 @@
 <script>
 // ---------- Version ----------
 // Bump APP_VERSION and add a line at the top of RELEASES on every release.
-const APP_VERSION = '1.21';
+const APP_VERSION = '1.22';
 const RELEASES = [
+  ['1.22', '9 พ.ย. 2569', 'ลิงก์แชร์สั้นลง: เก็บเฉพาะข้อมูลที่จำเป็น และย่อเป็น is.gd/... ให้อัตโนมัติ'],
   ['1.21', '9 พ.ย. 2569', 'แชร์ทริปเข้า LINE และ Messenger ได้ตรงๆ จากในแอป ใช้ได้ทั้งมือถือและคอมพิวเตอร์'],
   ['1.20', '9 พ.ย. 2569', 'แถบบอกเวลาขับระหว่างแต่ละจุด เช่น จุด 1 → 2 · 1 ชม. 44 นาที · 82 กม. รวมขากลับบ้าน'],
   ['1.19', '9 พ.ย. 2569', 'แจ้งเตือนเมื่อมีเวอร์ชันใหม่ กด "อัปเดตเลย" ได้ในแอป ไม่ต้องปิดเปิดใหม่'],
@@ -523,8 +524,35 @@ const unb64u = str => { str = str.replace(/-/g,'+').replace(/_/g,'/'); while(str
 async function pipeBytes(bytes, stream){
   return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
 }
+// Compact form for links: only what's needed, coordinates rounded to ~1 m, default values left out.
+const TRIP_DEFAULTS = {tripType:'single', endTime:'18:00', returnStart:'yes', orderMode:'fastest', dayMinutes:'600',
+  returnStartMulti:'yes', budgetLimit:'', checkWeather:'yes', kmPerLiter:'12', pricePerLiter:'36', insertRestStops:true, findHotels:true};
+const TRIP_KEYS = Object.keys(TRIP_DEFAULTS).concat(['startDateTime']);
+const STOP_DEFAULTS = ['', null, null, '20', '2', '0', '', ''];
+const r5 = v => v == null || v === '' ? null : Math.round(parseFloat(v) * 1e5) / 1e5;
+const shortName = n => { n = (n || '').trim(); return parsePlaceLine(n).lat != null ? n : n.split(',')[0].trim(); };
+function compactTrip(t){
+  const set = {};
+  TRIP_KEYS.forEach((k, i) => { if(t[k] !== undefined && t[k] !== TRIP_DEFAULTS[k] && t[k] !== '') set[i] = t[k]; });
+  const stops = tripPlaces(t).map(x => {
+    const a = [shortName(x.name), r5(x.lat), r5(x.lng), x.dur, x.prio, x.cost, x.open, x.close];
+    while(a.length > 1 && (a[a.length-1] == null || String(a[a.length-1]) === String(STOP_DEFAULTS[a.length-1]))) a.pop();
+    return a;
+  });
+  return [2, [shortName(t.start && t.start.name), r5(t.start && t.start.lat), r5(t.start && t.start.lng)], set, stops];
+}
+function expandTrip(c){
+  const t = Object.assign({}, TRIP_DEFAULTS);
+  Object.entries(c[2] || {}).forEach(([i, v]) => { t[TRIP_KEYS[i]] = v; });
+  t.start = {name: c[1][0] || '', lat: c[1][1], lng: c[1][2]};
+  t.stops = (c[3] || []).map(a => {
+    const f = STOP_DEFAULTS.map((d, i) => a[i] != null ? a[i] : d);
+    return {name: f[0], lat: f[1], lng: f[2], dur: f[3], prio: f[4], cost: f[5], open: f[6], close: f[7]};
+  });
+  return t;
+}
 async function encodeTrip(trip){
-  const bytes = new TextEncoder().encode(JSON.stringify(trip));
+  const bytes = new TextEncoder().encode(JSON.stringify(compactTrip(trip)));
   if(typeof CompressionStream !== 'undefined'){
     try{ return 'z.' + b64u(await pipeBytes(bytes, new CompressionStream('deflate-raw'))); }catch(e){}
   }
@@ -533,7 +561,8 @@ async function encodeTrip(trip){
 async function decodeTrip(code){
   const kind = code.slice(0,2), data = unb64u(code.slice(2));
   const bytes = kind === 'z.' ? await pipeBytes(data, new DecompressionStream('deflate-raw')) : data;
-  return JSON.parse(new TextDecoder().decode(bytes));
+  const obj = JSON.parse(new TextDecoder().decode(bytes));
+  return Array.isArray(obj) && obj[0] === 2 ? expandTrip(obj) : obj;    // older links held the full object
 }
 async function readTripFromHash(){
   const h = location.hash;
@@ -931,19 +960,42 @@ async function shareTrip(t, name){
   openShareSheet(name, text, url);
 }
 const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const shortCache = {};
+function shortenUrl(url){
+  if(shortCache[url]) return Promise.resolve(shortCache[url]);
+  return new Promise(resolve => {
+    const cb = 'isgd_' + Date.now();
+    const el = document.createElement('script');
+    const done = v => { clearTimeout(timer); delete window[cb]; el.remove(); if(v) shortCache[url] = v; resolve(v || null); };
+    const timer = setTimeout(() => done(null), 6000);
+    window[cb] = d => done(d && d.shorturl);
+    el.onerror = () => done(null);
+    el.src = 'https://is.gd/create.php?format=json&callback=' + cb + '&url=' + encodeURIComponent(url);
+    document.head.appendChild(el);
+  });
+}
+function setShareLinks(text, url){
+  document.getElementById('shareLine').href = 'https://line.me/R/share?text=' + encodeURIComponent(text + '\n' + url);
+  document.getElementById('shareMessenger').href = 'fb-messenger://share/?link=' + encodeURIComponent(url);
+  shareData.url = url;
+}
 let shareData = null;
 function openShareSheet(name, text, url){
-  shareData = {name, text, url};
+  shareData = {name, text, url, longUrl: url};
   document.getElementById('shareTitle').textContent = '📤 แชร์ "' + name + '"';
   // LINE's share page opens the LINE app on phones, and LINE web/desktop on computers.
-  document.getElementById('shareLine').href = 'https://line.me/R/share?text=' + encodeURIComponent(text + '\n' + url);
-  const msg = document.getElementById('shareMessenger');
-  msg.hidden = !IS_MOBILE;                                   // Messenger's share link only works in the phone app
-  msg.href = 'fb-messenger://share/?link=' + encodeURIComponent(url);
+  setShareLinks(text, url);
+  document.getElementById('shareMessenger').hidden = !IS_MOBILE;   // Messenger's share link only works in the phone app
   document.getElementById('shareMore').hidden = !navigator.share;
-  document.getElementById('shareHint').textContent = IS_MOBILE ? ''
-    : 'บนคอมพิวเตอร์: กด LINE แล้วล็อกอิน LINE ในเบราว์เซอร์ หรือกด "คัดลอกลิงก์" แล้ววางในแชท LINE';
+  const hint = document.getElementById('shareHint');
+  const deskTip = IS_MOBILE ? '' : ' · บนคอมพิวเตอร์ ถ้าใช้ LINE แบบโปรแกรม กด "คัดลอกลิงก์" แล้ววางในแชทจะเร็วกว่า';
+  hint.textContent = 'กำลังย่อลิงก์...' + deskTip;
   document.getElementById('shareModal').style.display = 'flex';
+  shortenUrl(url).then(short => {
+    if(!shareData || shareData.longUrl !== url) return;          // sheet was reopened for another trip
+    if(short){ setShareLinks(text, short); hint.textContent = '✓ ย่อลิงก์แล้ว: ' + short.replace('https://','') + deskTip; }
+    else hint.textContent = 'ย่อลิงก์ไม่ได้ตอนนี้ จะส่งลิงก์แบบเต็มแทน' + deskTip;
+  });
 }
 function closeShareSheet(){ document.getElementById('shareModal').style.display = 'none'; }
 document.getElementById('shareClose').addEventListener('click', closeShareSheet);
