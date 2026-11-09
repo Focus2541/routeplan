@@ -147,6 +147,19 @@
   .choice.on{border-color:var(--trail-dark);background:#E8F0EC;}
   .choice.on::after{border-color:var(--trail-dark);background:radial-gradient(var(--trail-dark) 0 45%, transparent 50%);}
   .choice:focus-visible{outline:2px solid var(--trail);outline-offset:2px;}
+  .saved-count{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:500;color:var(--white);background:var(--trail);
+    border-radius:20px;padding:1px 9px;margin-left:4px;}
+  .saved-count:empty{display:none;}
+  .saved-item{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:8px;background:var(--paper);}
+  .saved-item .si-name{font-family:'Kanit',sans-serif;font-weight:600;font-size:15px;color:var(--trail-dark);line-height:1.4;}
+  .saved-item .si-sub{font-size:12px;color:var(--ink-soft);margin-top:2px;line-height:1.5;}
+  .saved-item .si-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
+  .si-btn{border:1.5px solid var(--line);background:var(--white);color:var(--trail-dark);border-radius:10px;padding:8px 12px;
+    font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;min-height:38px;}
+  .si-btn.primary{background:var(--trail-dark);border-color:var(--trail-dark);color:var(--white);}
+  .si-btn.danger{color:var(--cut);}
+  .si-btn.confirm{background:var(--cut);border-color:var(--cut);color:var(--white);}
+  .saved-empty{font-size:13px;color:var(--ink-soft);padding:6px 0;}
   .trip-panel{position:sticky;top:0;z-index:25;margin-top:14px;padding:14px 16px;background:var(--white);
     border:2px solid var(--trail-dark);border-radius:14px;box-shadow:0 4px 14px rgba(34,48,31,.12);}
   .trip-panel .routebtn{margin:10px 0 4px;}
@@ -209,6 +222,14 @@
     <p>คำนวณเวลาเดินทางจริงและจัดลำดับให้ไปได้มากที่สุดในเวลา/งบที่มี — ใช้แผนที่และเส้นทางจาก OpenStreetMap/OSRM ทั้งหมด</p>
     <span class="badge">ฟรี 100% · ไม่ต้องมี API key · ไม่ต้องมีบัตรเครดิต</span>
   </header>
+
+  <details class="card" id="savedCard">
+    <summary><span class="ico">📁</span> ทริปที่บันทึกไว้ <span class="saved-count" id="savedCount"></span></summary>
+    <div class="card-body">
+      <div id="savedList"></div>
+      <div class="hint" style="margin-top:10px;">บันทึกไว้ในเครื่องนี้ (ไม่ต้องสมัครสมาชิก) ตำแหน่งที่หาเจอแล้วถูกเก็บไปด้วย เปิดกลับมาไม่ต้องค้นหาซ้ำ ถ้าจะใช้ในเครื่องอื่น ให้กด "แชร์" แล้วเปิดลิงก์ในเครื่องนั้น</div>
+    </div>
+  </details>
 
   <details class="card">
     <summary><span class="ico">🔗</span> นำเข้าจุดจากลิงก์ Google Maps</summary>
@@ -347,7 +368,10 @@
       </div>
     </details>
 
-    <button class="link-btn" id="shareBtn">🔗 คัดลอกลิงก์แชร์ทริปนี้</button>
+    <div class="two-col" style="margin-bottom:8px;">
+      <button class="add-btn" id="saveTripBtn" style="margin:0;">💾 บันทึกทริปนี้</button>
+      <button class="add-btn" id="shareBtn" style="margin:0;">📤 แชร์ทริปนี้</button>
+    </div>
   </div>
 
   <div class="calc-bar"><button class="calc-btn" id="calcBtn" disabled>🧭 คำนวณเส้นทาง — ไปที่ไหนก่อนดี</button></div>
@@ -382,8 +406,9 @@
 <script>
 // ---------- Version ----------
 // Bump APP_VERSION and add a line at the top of RELEASES on every release.
-const APP_VERSION = '1.15';
+const APP_VERSION = '1.16';
 const RELEASES = [
+  ['1.16', '9 พ.ย. 2569', 'บันทึกทริปได้หลายทริป เปิดกลับมาไม่ต้องกรอกซ้ำ · แชร์ทริปเข้า LINE ได้ตรงๆ (ลิงก์สั้นลง)'],
   ['1.15', '9 พ.ย. 2569', 'โหมดระหว่างเดินทาง: กด "ถึงแล้ว" ที่แต่ละจุด แล้วนำทางสดจากตำแหน่งปัจจุบันไปจุดถัดไป'],
   ['1.14', '9 พ.ย. 2569', 'กดคำนวณแล้วเพิ่มรายชื่อ/พิกัดที่ค้างในช่องให้อัตโนมัติ ไม่ต้องกดค้นหาก่อน'],
   ['1.13', '9 พ.ย. 2569', 'ช่องรายชื่อสถานที่มีรายการให้เลือกขณะพิมพ์ แตะแล้วเพิ่มเป็นจุดที่ต้องไปทันที'],
@@ -408,16 +433,35 @@ const DAY_COLORS = ['#C1732E','#2F6F62','#7A5DC7','#B03A5B','#3D7EA6'];
 const REST_THRESHOLD_SEC = 150 * 60;
 const STORAGE_KEY = 'route_optimizer_trip_v1';
 
-let importedTrip = null;
-(function(){
-  const h = location.hash;
-  if(h && h.indexOf('#trip=') === 0){
-    try{
-      const json = decodeURIComponent(escape(atob(decodeURIComponent(h.slice(6)))));
-      importedTrip = JSON.parse(json);
-    }catch(e){ importedTrip = null; }
+// ---------- Share links ----------
+// Link format: #t=z.<base64url of deflated JSON>  (p. = not compressed). Old #trip= links still open.
+const b64u = bytes => { let s = ''; bytes.forEach(b => s += String.fromCharCode(b));
+  return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); };
+const unb64u = str => { str = str.replace(/-/g,'+').replace(/_/g,'/'); while(str.length % 4) str += '=';
+  return Uint8Array.from(atob(str), c => c.charCodeAt(0)); };
+async function pipeBytes(bytes, stream){
+  return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
+}
+async function encodeTrip(trip){
+  const bytes = new TextEncoder().encode(JSON.stringify(trip));
+  if(typeof CompressionStream !== 'undefined'){
+    try{ return 'z.' + b64u(await pipeBytes(bytes, new CompressionStream('deflate-raw'))); }catch(e){}
   }
-})();
+  return 'p.' + b64u(bytes);
+}
+async function decodeTrip(code){
+  const kind = code.slice(0,2), data = unb64u(code.slice(2));
+  const bytes = kind === 'z.' ? await pipeBytes(data, new DecompressionStream('deflate-raw')) : data;
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+async function readTripFromHash(){
+  const h = location.hash;
+  try{
+    if(h.indexOf('#t=') === 0) return await decodeTrip(decodeURIComponent(h.slice(3)));
+    if(h.indexOf('#trip=') === 0) return JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(h.slice(6))))));
+  }catch(e){}
+  return null;
+}
 
 function initMap(){
   try{
@@ -795,30 +839,119 @@ function loadFromStorage(){
   try{ const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : null; }catch(e){ return null; }
 }
 const saveToStorageDebounced = debounce(saveToStorage, 600);
-function flashSavedNote(){
+function flashSavedNote(msg){
   const el = document.getElementById('savedNote');
   if(!el) return;
-  el.textContent = 'บันทึกการตั้งค่าไว้ในเครื่องนี้แล้ว';
+  el.textContent = msg || 'เปิดทริปล่าสุดที่วางแผนไว้แล้ว';
   el.style.opacity = '1';
   clearTimeout(flashSavedNote._t);
-  flashSavedNote._t = setTimeout(() => { el.style.opacity = '0'; }, 2000);
+  flashSavedNote._t = setTimeout(() => { el.style.opacity = '0'; }, msg ? 4500 : 2500);
 }
 
-document.getElementById('shareBtn').addEventListener('click', () => {
-  const data = serializeTrip();
-  const encoded = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(data)))));
-  const url = location.href.split('#')[0] + '#trip=' + encoded;
-  if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(url).then(() => alert('คัดลอกลิงก์แชร์แล้ว')).catch(() => prompt('คัดลอกลิงก์นี้ไปแชร์ได้เลย:', url));
-  } else {
-    prompt('คัดลอกลิงก์นี้ไปแชร์ได้เลย:', url);
+const TH_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+function thaiDate(d, withTime){
+  if(!(d instanceof Date) || isNaN(d)) return '';
+  return `${d.getDate()} ${TH_MONTHS[d.getMonth()]}` + (withTime ? ` ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}` : '');
+}
+function tripPlaces(t){ return (t.stops || []).filter(x => (x.name || '').trim()); }
+function defaultTripName(t){
+  const ps = tripPlaces(t).map(x => x.name.split(',')[0].trim());
+  const when = t.startDateTime ? thaiDate(new Date(t.startDateTime)) + ' · ' : '';
+  return when + (ps.slice(0,2).join(', ') || 'ทริปใหม่') + (ps.length > 2 ? ` +${ps.length-2}` : '');
+}
+async function shareTrip(t, name){
+  name = name || defaultTripName(t);
+  const url = location.href.split('#')[0] + '#t=' + await encodeTrip(t);
+  const list = tripPlaces(t).map((x,i) => `${i+1}. ${x.name.split(',')[0]}`).join('\n');
+  const text = `🧭 ${name}\nเริ่มจาก ${(t.start && t.start.name || '').split(',')[0]}\n${list}\n\nเปิดดูเส้นทางในแอป:`;
+  if(navigator.share){
+    try{ await navigator.share({title: name, text, url}); return; }
+    catch(e){ if(e && e.name === 'AbortError') return; }
   }
+  try{ await navigator.clipboard.writeText(text + '\n' + url); flashSavedNote('คัดลอกข้อความและลิงก์แล้ว นำไปวางใน LINE ได้เลย'); }
+  catch(e){ window.prompt('คัดลอกลิงก์นี้ไปแชร์:', url); }
+}
+
+const SAVED_KEY = 'route_optimizer_saved_trips_v1';
+function loadSavedTrips(){ try{ return JSON.parse(localStorage.getItem(SAVED_KEY) || '[]'); }catch(e){ return []; } }
+function storeSavedTrips(list){
+  try{ localStorage.setItem(SAVED_KEY, JSON.stringify(list)); return true; }
+  catch(e){ flashSavedNote('บันทึกไม่ได้ — พื้นที่ในเบราว์เซอร์เต็ม ลองลบทริปเก่าออกก่อน'); return false; }
+}
+function tripSignature(t){ return JSON.stringify([t.start && t.start.name, tripPlaces(t).map(x => [x.name, x.lat, x.lng])]); }
+function saveCurrentTrip(){
+  const t = serializeTrip();
+  if(!tripPlaces(t).length && !document.getElementById('bulkInput').value.trim()){
+    flashSavedNote('ยังไม่มีสถานที่ให้บันทึก'); return;
+  }
+  const list = loadSavedTrips(), sig = tripSignature(t);
+  const same = list.find(x => tripSignature(x.trip) === sig);
+  if(same){ same.trip = t; same.savedAt = Date.now(); }
+  else list.unshift({id: Date.now().toString(36), name: defaultTripName(t), savedAt: Date.now(), trip: t});
+  if(storeSavedTrips(list)){
+    renderSavedTrips();
+    document.getElementById('savedCard').open = true;
+    flashSavedNote(same ? 'อัปเดตทริปที่บันทึกไว้แล้ว' : 'บันทึกทริปแล้ว ดูได้ที่ "📁 ทริปที่บันทึกไว้" ด้านบน');
+  }
+}
+function renderSavedTrips(){
+  const list = loadSavedTrips();
+  document.getElementById('savedCount').textContent = list.length || '';
+  const box = document.getElementById('savedList');
+  if(!list.length){ box.innerHTML = '<div class="saved-empty">ยังไม่มีทริปที่บันทึกไว้ — วางแผนเสร็จแล้วกด "💾 บันทึกทริปนี้" ด้านล่าง</div>'; return; }
+  box.innerHTML = list.map(x => {
+    const n = tripPlaces(x.trip).length;
+    const when = x.trip.startDateTime ? `ออกเดินทาง ${thaiDate(new Date(x.trip.startDateTime), true)} · ` : '';
+    return `<div class="saved-item" data-id="${x.id}">
+      <div class="si-name"></div>
+      <div class="si-sub">${when}${n} สถานที่ · บันทึก ${thaiDate(new Date(x.savedAt))}</div>
+      <div class="si-acts">
+        <button type="button" class="si-btn primary" data-act="open">เปิด</button>
+        <button type="button" class="si-btn" data-act="share">📤 แชร์</button>
+        <button type="button" class="si-btn" data-act="rename">✏️ ตั้งชื่อ</button>
+        <button type="button" class="si-btn danger" data-act="del">ลบ</button>
+      </div></div>`;
+  }).join('');
+  box.querySelectorAll('.saved-item').forEach(el => {                 // names set as text (user input)
+    el.querySelector('.si-name').textContent = list.find(x => x.id === el.dataset.id).name;
+  });
+}
+document.getElementById('savedList').addEventListener('click', async e => {
+  const b = e.target.closest('.si-btn'); if(!b) return;
+  const id = b.closest('.saved-item').dataset.id;
+  const list = loadSavedTrips(), item = list.find(x => x.id === id);
+  if(!item) return;
+  if(b.dataset.act === 'open'){
+    applyTrip(item.trip); syncTripTypeFields(); saveToStorage();
+    document.getElementById('results').style.display = 'none';
+    document.getElementById('formSection').scrollIntoView({behavior:'smooth', block:'start'});
+    flashSavedNote(`เปิด "${item.name}" แล้ว — กดคำนวณเส้นทางได้เลย`);
+  } else if(b.dataset.act === 'share'){
+    shareTrip(item.trip, item.name);
+  } else if(b.dataset.act === 'rename'){
+    const nm = window.prompt('ตั้งชื่อทริป', item.name);
+    if(nm && nm.trim()){ item.name = nm.trim().slice(0, 80); storeSavedTrips(list); renderSavedTrips(); }
+  } else if(b.dataset.act === 'del'){
+    if(!b.classList.contains('confirm')){              // tap twice to delete
+      b.classList.add('confirm'); b.textContent = 'แตะอีกครั้งเพื่อลบ';
+      setTimeout(() => { if(b.isConnected){ b.classList.remove('confirm'); b.textContent = 'ลบ'; } }, 3000);
+      return;
+    }
+    storeSavedTrips(list.filter(x => x.id !== id)); renderSavedTrips();
+  }
+});
+document.getElementById('saveTripBtn').addEventListener('click', saveCurrentTrip);
+document.getElementById('shareBtn').addEventListener('click', () => {
+  const t = serializeTrip();
+  if(!tripPlaces(t).length){ flashSavedNote('ยังไม่มีสถานที่ให้แชร์'); return; }
+  shareTrip(t);
 });
 
 document.getElementById('formSection').addEventListener('input', () => { saveToStorageDebounced(); });
 document.getElementById('formSection').addEventListener('change', () => { saveToStorageDebounced(); });
 
-document.addEventListener('DOMContentLoaded', function(){
+document.addEventListener('DOMContentLoaded', async function(){
+  const importedTrip = await readTripFromHash();
   document.getElementById('verTag').textContent = 'v' + APP_VERSION;
   document.getElementById('verFoot').textContent = 'เส้นทางประหยัดเวลา v' + APP_VERSION;
   document.getElementById('changelog').innerHTML = '<div style="font-weight:600;margin-bottom:4px;">มีอะไรใหม่</div>' +
@@ -836,8 +969,12 @@ document.addEventListener('DOMContentLoaded', function(){
   document.getElementById('bulkInput').addEventListener('input', checkCanCalc);
   document.getElementById('startInput').addEventListener('input', checkCanCalc);
 
+  renderSavedTrips();
   if(importedTrip){
     applyTrip(importedTrip);
+    saveToStorage();
+    history.replaceState(null, '', location.pathname + location.search);   // later reloads use the local copy
+    flashSavedNote('เปิดทริปที่แชร์มาแล้ว — กด "💾 บันทึกทริปนี้" เพื่อเก็บไว้');
   } else {
     const saved = loadFromStorage();
     if(saved){
