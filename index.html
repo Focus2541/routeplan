@@ -468,8 +468,9 @@
 <script>
 // ---------- Version ----------
 // Bump APP_VERSION and add a line at the top of RELEASES on every release.
-const APP_VERSION = '1.26';
+const APP_VERSION = '1.27';
 const RELEASES = [
+  ['1.27', '9 พ.ย. 2569', 'ลิงก์ของแต่ละจุดเปิดเส้นทางจากจุดก่อนหน้า (ไม่ใช่จากตำแหน่งที่อยู่ตอนนี้) ปุ่ม "ต่อไป" ด้านบนยังนำทางสดจากตำแหน่งปัจจุบัน'],
   ['1.26', '9 พ.ย. 2569', 'เปิดลิงก์แชร์แล้วเห็นเฉพาะหน้าเส้นทาง คำนวณให้อัตโนมัติ มีปุ่มบันทึกและแก้ไข'],
   ['1.25', '9 พ.ย. 2569', 'แก้: เปิดลิงก์แชร์ที่มีข้อความแชทติดท้ายแล้วได้หน้าเปล่า ตอนนี้อ่านได้ และบอกชัดถ้าลิงก์เสีย'],
   ['1.24', '9 พ.ย. 2569', 'แก้: ข้อความแชร์ตัดพิกัดจุดเริ่มต้นครึ่งเดียว ("เริ่มจาก 19.149982")'],
@@ -2002,6 +2003,10 @@ async function runOptimization(){
 function navHereUrl(p){
   return `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=driving&dir_action=navigate`;
 }
+// One leg exactly as planned: from the previous stop, not from wherever the phone/PC is now.
+function legRouteUrl(o, p){
+  return `https://www.google.com/maps/dir/?api=1&origin=${o.lat},${o.lng}&destination=${p.lat},${p.lng}&travelmode=driving`;
+}
 function navRemainingUrl(list){
   const part = list.slice(0, 10);               // Google allows up to 9 stops in between
   const dest = part[part.length-1];
@@ -2098,6 +2103,7 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
     bodyHtml += '<div class="trail-list">';
 
     let cum = new Date(opts.startDateTime.getTime() + d*24*60*60*1000);
+    let legFromLabel = '';
     for(let pos=0; pos<dayOrder.length; pos++){
       const globalIdx = dayOrder[pos];
       const p = allPoints[globalIdx];
@@ -2141,12 +2147,15 @@ async function renderResults(allPoints, days, cutStops, mat, distMat, visitSec, 
 
       let navLink = '', seqAttr = '';
       if(pos>0 && !isBoundaryRepeat){
+        const from = allPoints[dayOrder[pos-1]];
+        const fromName = (pos-1 === 0) ? (d === 0 ? 'จุดเริ่มต้น' : 'ที่พัก') : 'จุดที่ ' + legFromLabel;
         const n = tripSeq.length;
         tripSeq.push({lat:p.lat, lng:p.lng, name:p.label, num:markerLabel});
         seqAttr = ` data-seq="${n}"`;
-        navLink = `<div class="leg-actions"><a href="${navHereUrl(p)}" target="_blank" rel="noopener" class="navlink">🧭 นำทางไปจุดนี้ →</a>
+        navLink = `<div class="leg-actions"><a href="${legRouteUrl(from, p)}" target="_blank" rel="noopener" class="navlink">🗺 เส้นทางจาก${fromName} → จุดนี้</a>
           <button type="button" class="done-btn" data-seq="${n}">✓ ถึงแล้ว</button></div>`;
       }
+      legFromLabel = markerLabel;
 
       const sch = budgetInfo.schedule && budgetInfo.schedule[globalIdx];
       let metaText;
